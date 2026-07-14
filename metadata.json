@@ -1,0 +1,6 @@
+{
+  "name": "Vision Central Player",
+  "description": "Aplicativo player para Android TV e TV Box do sistema Vision Central.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
