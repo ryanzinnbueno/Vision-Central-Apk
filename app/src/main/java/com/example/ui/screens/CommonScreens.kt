@@ -28,6 +28,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.delay
 import com.example.R
 
 @Composable
@@ -78,11 +79,18 @@ fun SplashScreen() {
 fun ActivationScreen(error: String? = null, onActivate: (String) -> Unit) {
     var token by remember { mutableStateOf("") }
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF050508)),
+            .background(Color(0xFF050508))
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { 
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                })
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -134,6 +142,7 @@ fun ActivationScreen(error: String? = null, onActivate: (String) -> Unit) {
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                     onDone = {
+                        focusManager.clearFocus()
                         keyboardController?.hide()
                         if (token.isNotBlank()) onActivate(token)
                     }
@@ -150,6 +159,7 @@ fun ActivationScreen(error: String? = null, onActivate: (String) -> Unit) {
             Button(
                 onClick = { 
                     if (token.isNotBlank()) {
+                        focusManager.clearFocus()
                         keyboardController?.hide()
                         onActivate(token) 
                     }
@@ -302,12 +312,16 @@ fun TechnicalPanelDialog(
 ) {
     val firstItemFocusRequester = remember { FocusRequester() }
 
+    var focusRequested by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(300)
-        try {
-            firstItemFocusRequester.requestFocus()
-        } catch (e: Exception) {
-            // Log or ignore if still not attached
+        delay(500)
+        if (!focusRequested) {
+            try {
+                firstItemFocusRequester.requestFocus()
+                focusRequested = true
+            } catch (e: Exception) {
+                // Ignore if still not attached
+            }
         }
     }
 

@@ -21,12 +21,47 @@ import coil.compose.AsyncImage
 import com.example.data.local.LocalMediaItem
 import kotlinx.coroutines.delay
 
+import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.layout.aspectRatio
+import com.example.data.local.DeviceConfig
+
 @Composable
-fun PlayerScreen(items: List<LocalMediaItem>, isPaused: Boolean = false) {
-    var currentIndex by remember { mutableStateOf(0) }
-    val currentItem = items[currentIndex]
+fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: Boolean = false) {
+    var currentIndex by remember(items) { mutableStateOf(0) }
+    val currentItem = items.getOrNull(currentIndex) ?: return
     
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    val rotation = config?.rotacao?.toFloatOrNull() ?: 0f
+    val contentScale = when (config?.ajusteTela) {
+        "Fit" -> ContentScale.Fit
+        "Fill" -> ContentScale.FillBounds
+        "Cover" -> ContentScale.Crop
+        else -> ContentScale.Fit
+    }
+    
+    val resizeMode = when (config?.ajusteTela) {
+        "Fit" -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        "Fill" -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+        "Cover" -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    }
+
+    val aspectRatio = when (config?.proporcao) {
+        "16:9" -> 16f / 9f
+        "4:3" -> 4f / 3f
+        "9:16" -> 9f / 16f
+        "1:1" -> 1f
+        else -> null
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .rotate(rotation)
+            .then(
+                if (aspectRatio != null) Modifier.aspectRatio(aspectRatio) else Modifier
+            )
+    ) {
         Crossfade(targetState = currentItem) { item ->
             val localFile = item.localPath?.let { java.io.File(it) }
             val mediaSource = if (localFile != null && localFile.exists()) item.localPath else item.url
@@ -35,6 +70,8 @@ fun PlayerScreen(items: List<LocalMediaItem>, isPaused: Boolean = false) {
                 VideoPlayer(
                     url = mediaSource,
                     isPaused = isPaused,
+                    contentScale = contentScale,
+                    resizeMode = resizeMode,
                     onFinished = {
                         currentIndex = (currentIndex + 1) % items.size
                     }
@@ -44,6 +81,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, isPaused: Boolean = false) {
                     url = mediaSource,
                     duration = item.duracao,
                     isPaused = isPaused,
+                    contentScale = contentScale,
                     onFinished = {
                         currentIndex = (currentIndex + 1) % items.size
                     }
@@ -54,7 +92,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, isPaused: Boolean = false) {
 }
 
 @Composable
-fun ImagePlayer(url: String, duration: Int, isPaused: Boolean, onFinished: () -> Unit) {
+fun ImagePlayer(url: String, duration: Int, isPaused: Boolean, contentScale: ContentScale, onFinished: () -> Unit) {
     var remainingTime by remember(url) { mutableLongStateOf(duration * 1000L) }
     
     LaunchedEffect(url, isPaused) {
@@ -91,13 +129,13 @@ fun ImagePlayer(url: String, duration: Int, isPaused: Boolean, onFinished: () ->
         model = if (url.startsWith("/")) java.io.File(url) else url,
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),
-        contentScale = ContentScale.Fit
+        contentScale = contentScale
     )
 }
 
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(url: String, isPaused: Boolean, onFinished: () -> Unit) {
+fun VideoPlayer(url: String, isPaused: Boolean, contentScale: ContentScale, resizeMode: Int, onFinished: () -> Unit) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
@@ -136,8 +174,11 @@ fun VideoPlayer(url: String, isPaused: Boolean, onFinished: () -> Unit) {
             PlayerView(it).apply {
                 player = exoPlayer
                 useController = false
-                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.resizeMode = resizeMode
             }
+        },
+        update = {
+            it.resizeMode = resizeMode
         },
         modifier = Modifier.fillMaxSize()
     )

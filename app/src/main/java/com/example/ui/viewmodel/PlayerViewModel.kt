@@ -7,11 +7,17 @@ import com.example.data.VisionRepository
 import com.example.data.local.DeviceConfig
 import com.example.data.local.LocalMediaItem
 import com.example.data.local.LocalPlaylist
+import com.example.data.remote.SupabaseClient
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -126,28 +132,53 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startHeartbeat() {
         viewModelScope.launch {
-            var syncCounter = 0
             while (true) {
-                if (!repository.isConfigValid()) {
-                    _uiState.value = UiState.Activation("Sessão expirada ou revogada.")
+                val config = repository.getOrCreateConfig()
+                if (!config.isLinked || config.tvId == null) {
+                    _uiState.value = UiState.Activation()
                     break
                 }
-                repository.updateStatus("Online")
-                
-                // Sync every 5 minutes (300 seconds / 30 seconds delay = 10 iterations)
-                syncCounter++
-                if (syncCounter >= 10) {
-                    syncCounter = 0
-                    val config = deviceConfig.value
-                    if (config?.clienteId != null) {
-                        repository.syncPlaylist(config.clienteId)
-                        // Note: If we want to force refresh the UI without stopping playback, 
-                        // we'd need to compare the new playlist with the current one.
-                        // For now, syncing in the background is a good start.
-                    }
+
+                // Check session validity
+                if (!repository.isConfigValid()) {
+                    _uiState.value = UiState.Activation("Dispositivo desvinculado.")
+                    break
                 }
                 
-                delay(30000)
+                // Polling Sync & Heartbeat every 10 seconds
+                if (config.clienteId != null) {
+                    _isSyncing.value = true
+                    try {
+                        val newPlaylist = repository.syncPlaylist(config.clienteId)
+                        if (newPlaylist != null) {
+                            val newItems = repository.parseItems(newPlaylist.itemsJson)
+                            val currentState = _uiState.value
+                            
+                            if (currentState is UiState.Playing) {
+                                // Compare items or playlist ID to refresh if needed
+                                if (newItems != currentState.items || newPlaylist.id != currentState.playlist.id) {
+                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
+                                }
+                            } else if (currentState is UiState.Stopped && config.modoReproducaoAtivo) {
+                                if (newItems.isNotEmpty()) {
+                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
+                                }
+                            } else if (currentState !is UiState.Playing && currentState !is UiState.Stopped && currentState !is UiState.Splash) {
+                                if (newItems.isNotEmpty()) {
+                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        _isSyncing.value = false
+                    }
+                } else {
+                    repository.updateHeartbeat(isSync = false)
+                }
+                
+                delay(10000)
             }
         }
     }

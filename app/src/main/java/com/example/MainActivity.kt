@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.activate(token)
                   }
                   is UiState.Syncing -> SyncingScreen(s.message)
-                  is UiState.Playing -> PlayerScreen(s.items, isPaused = showTechnicalPanel)
+                  is UiState.Playing -> PlayerScreen(s.items, config = config, isPaused = showTechnicalPanel)
                   is UiState.Error -> ErrorScreen(s.message) { viewModel.checkStatus() }
                   is UiState.Stopped -> StoppedScreen { showTechnicalPanel = true }
                   is UiState.TechnicalPanel -> {

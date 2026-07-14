@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+import com.example.data.model.TvConfig
+
 class VisionRepository(context: Context) {
     private val db = Room.databaseBuilder(
         context.applicationContext,
@@ -52,12 +54,19 @@ class VisionRepository(context: Context) {
     suspend fun validateToken(rawToken: String): DeviceConfig? {
         val normalized = normalizeToken(rawToken)
         try {
-            val tvs = SupabaseClient.client.postgrest["tvs"]
-                .select()
-                .decodeList<Tv>()
-            
-            val matchedTv = tvs.find { normalizeToken(it.token) == normalized }
-            
+            // 1. Search directly in Supabase for the TV with this token
+            // We use Case-Insensitive search if possible, or just exact match on normalized
+            val matchedTv = SupabaseClient.client.postgrest["tvs"]
+                .select {
+                    filter {
+                        eq("token", rawToken.trim()) // Try exact first
+                    }
+                }.decodeSingleOrNull<Tv>() 
+                ?: SupabaseClient.client.postgrest["tvs"]
+                    .select()
+                    .decodeList<Tv>()
+                    .find { normalizeToken(it.token) == normalized }
+
             if (matchedTv != null) {
                 val currentConfig = dao.getConfig()!!
                 val newConfig = currentConfig.copy(
@@ -65,9 +74,20 @@ class VisionRepository(context: Context) {
                     clienteId = matchedTv.clienteId,
                     tvId = matchedTv.id,
                     tvName = matchedTv.nome,
-                    isLinked = true
+                    isLinked = true,
+                    // Use existing settings from the TV record
+                    orientacao = matchedTv.orientacao ?: "Horizontal",
+                    rotacao = matchedTv.rotacao ?: "0",
+                    proporcao = matchedTv.proporcao ?: "16:9",
+                    resolucao = matchedTv.resolucao ?: "1080p",
+                    ajusteTela = matchedTv.ajusteTela ?: "Cover",
+                    modoReproducaoAtivo = matchedTv.modoReproducao ?: true
                 )
                 dao.saveConfig(newConfig)
+                
+                // Immediately sync playlist and full config to apply all panel settings
+                matchedTv.clienteId?.let { syncPlaylist(it) }
+                
                 return newConfig
             }
         } catch (e: Exception) {
@@ -112,13 +132,53 @@ class VisionRepository(context: Context) {
                 .decodeSingleOrNull<com.example.data.model.Cliente>()
 
             val playlistId = tv?.playlistId ?: cliente?.playlistId ?: return null
+            
+            // Fetch separate config if exists (tabela configuracoes)
+            val tvConfig: TvConfig? = try {
+                SupabaseClient.client.postgrest["configuracoes"]
+                    .select { filter { eq("tv_id", tvId) } }
+                    .decodeSingleOrNull<TvConfig>()
+            } catch (e: Exception) {
+                null
+            }
 
-            // Update configuration with orientation from cliente
-            cliente?.let {
-                val currentConfig = dao.getConfig()!!
-                if (currentConfig.orientacao != it.orientation) {
-                    dao.saveConfig(currentConfig.copy(orientacao = it.orientation))
+            // Update configuration
+            val currentConfig = dao.getConfig()!!
+            var updatedConfig = currentConfig
+            
+            if (tv != null) {
+                if (currentConfig.tvName != tv.nome) {
+                    updatedConfig = updatedConfig.copy(tvName = tv.nome)
                 }
+                // Sync from TV fields if available
+                tv.rotacao?.let { updatedConfig = updatedConfig.copy(rotacao = it) }
+                tv.orientacao?.let { updatedConfig = updatedConfig.copy(orientacao = it) }
+                tv.proporcao?.let { updatedConfig = updatedConfig.copy(proporcao = it) }
+                tv.resolucao?.let { updatedConfig = updatedConfig.copy(resolucao = it) }
+                tv.ajusteTela?.let { updatedConfig = updatedConfig.copy(ajusteTela = it) }
+                tv.modoReproducao?.let { updatedConfig = updatedConfig.copy(modoReproducaoAtivo = it) }
+            }
+            
+            // Override with separate config if available
+            tvConfig?.let { cfg ->
+                updatedConfig = updatedConfig.copy(
+                    rotacao = cfg.rotacao ?: updatedConfig.rotacao,
+                    orientacao = cfg.orientacao ?: updatedConfig.orientacao,
+                    proporcao = cfg.proporcao ?: updatedConfig.proporcao,
+                    resolucao = cfg.resolucao ?: updatedConfig.resolucao,
+                    ajusteTela = cfg.ajusteTela ?: updatedConfig.ajusteTela,
+                    modoReproducaoAtivo = cfg.modoReproducao ?: updatedConfig.modoReproducaoAtivo
+                )
+            }
+            
+            cliente?.let {
+                if (updatedConfig.orientacao != it.orientation) {
+                    updatedConfig = updatedConfig.copy(orientacao = it.orientation)
+                }
+            }
+            
+            if (updatedConfig != currentConfig) {
+                dao.saveConfig(updatedConfig)
             }
 
             // 2. Get Playlist details
@@ -162,19 +222,24 @@ class VisionRepository(context: Context) {
                 nome = playlist.nome,
                 itemsJson = json.encodeToString(items)
             )
-            dao.savePlaylist(localPlaylist)
-
-            // Trigger background downloads
-            CoroutineScope(Dispatchers.IO).launch {
-                items.forEach { item ->
-                    // Attempt to pass size if available in the model
-                    val expectedSize = allMedia.find { it.id == item.id }?.tamanho?.toLongOrNull()
-                    downloadManager.downloadMedia(item.id, item.url, expectedSize = expectedSize)
+            
+            // Check if playlist actually changed before saving/triggering downloads
+            val existingPlaylist = dao.getPlaylist()
+            if (existingPlaylist?.itemsJson != localPlaylist.itemsJson || existingPlaylist?.id != localPlaylist.id) {
+                dao.savePlaylist(localPlaylist)
+                
+                // Trigger background downloads
+                CoroutineScope(Dispatchers.IO).launch {
+                    items.forEach { item ->
+                        val expectedSize = allMedia.find { it.id == item.id }?.tamanho?.toLongOrNull()
+                        downloadManager.downloadMedia(item.id, item.url, expectedSize = expectedSize)
+                    }
+                    val usedIds = items.map { it.id }.toSet()
+                    downloadManager.cleanupUnusedMedia(usedIds)
                 }
-                // Cleanup media not in current playlist
-                val usedIds = items.map { it.id }.toSet()
-                downloadManager.cleanupUnusedMedia(usedIds)
             }
+
+            updateHeartbeat(isSync = true)
 
             return localPlaylist
 
@@ -184,18 +249,26 @@ class VisionRepository(context: Context) {
         }
     }
 
-    suspend fun updateStatus(status: String) {
+    suspend fun updateHeartbeat(isSync: Boolean = false) {
         try {
             val config = dao.getConfig() ?: return
             val tvId = config.tvId ?: return
-            val update = mapOf(
-                "status" to status,
-                "ultima_conexao" to if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    java.time.OffsetDateTime.now().toString()
-                } else {
-                    java.util.Calendar.getInstance().time.toString()
-                }
+            
+            val timestamp = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                java.time.OffsetDateTime.now().toString()
+            } else {
+                java.util.Calendar.getInstance().time.toString()
+            }
+            
+            val update = mutableMapOf<String, String>(
+                "status" to "Online",
+                "ultima_conexao" to timestamp
             )
+            
+            if (isSync) {
+                update["ultima_sincronizacao"] = timestamp
+            }
+            
             SupabaseClient.client.postgrest["tvs"].update(update) {
                 filter { eq("id", tvId) }
             }

@@ -14,7 +14,26 @@ data class Tv(
     @SerialName("uptime") val uptime: String? = "0h 0m",
     @SerialName("ultima_sincronizacao") val ultimaSincronizacao: String? = null,
     @SerialName("ultima_conexao") val ultimaConexao: String? = null,
-    @SerialName("criado_em") val criadoEm: String? = null
+    @SerialName("criado_em") val criadoEm: String? = null,
+    // Add fields that might be directly in TV table
+    @SerialName("rotacao") val rotacao: String? = "0",
+    @SerialName("orientacao") val orientacao: String? = "Horizontal",
+    @SerialName("proporcao") val proporcao: String? = "16:9",
+    @SerialName("resolucao") val resolucao: String? = "1080p",
+    @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
+    @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
+)
+
+@Serializable
+data class TvConfig(
+    @SerialName("id") val id: String,
+    @SerialName("tv_id") val tvId: String,
+    @SerialName("rotacao") val rotacao: String? = "0",
+    @SerialName("orientacao") val orientacao: String? = "Horizontal",
+    @SerialName("proporcao") val proporcao: String? = "16:9",
+    @SerialName("resolucao") val resolucao: String? = "1080p",
+    @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
+    @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
 )
 
 @Serializable

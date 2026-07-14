@@ -34,7 +34,11 @@ data class DeviceConfig(
     val tvId: String? = null,
     val tvName: String? = null,
     val orientacao: String = "Horizontal",
-    val modoReproducaoAtivo: Boolean = true
+    val modoReproducaoAtivo: Boolean = true,
+    val rotacao: String = "0",
+    val proporcao: String = "16:9",
+    val resolucao: String = "1080p",
+    val ajusteTela: String = "Cover"
 )
 
 @Entity(tableName = "downloaded_media")
