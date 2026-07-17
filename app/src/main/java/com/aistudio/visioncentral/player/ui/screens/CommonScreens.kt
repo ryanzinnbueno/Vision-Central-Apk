@@ -429,7 +429,7 @@ fun TechnicalPanelDialog(
                     }
 
                     item {
-                        if (!config.modoReproducaoAtivo) {
+                        if (!config.autoplay) {
                             TvOptionButton(
                                 "Ativar Reprodução",
                                 onClick = { onTogglePlaybackMode(true) },
@@ -439,7 +439,7 @@ fun TechnicalPanelDialog(
                         } else {
                             TvSwitchRow(
                                 label = "Modo Reprodução",
-                                checked = config.modoReproducaoAtivo,
+                                checked = config.autoplay,
                                 onCheckedChange = onTogglePlaybackMode
                             )
                         }

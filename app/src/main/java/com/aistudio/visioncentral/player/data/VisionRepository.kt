@@ -95,20 +95,17 @@ class VisionRepository(context: Context) {
                     tvId = matchedTv.id,
                     tvName = matchedTv.nome,
                     isLinked = true,
-                    // Use existing settings from the TV record
+                    // Initial sync from tvs table
                     orientacao = matchedTv.orientacao ?: "Horizontal",
                     rotacao = matchedTv.rotacao ?: "0",
                     proporcao = matchedTv.proporcao ?: "16:9",
-                    resolucao = matchedTv.resolucao ?: "1080p",
-                    ajusteTela = matchedTv.ajusteTela ?: "Cover",
                     modoExibicao = matchedTv.modoExibicao ?: "CenterInside",
                     brilho = matchedTv.brilho ?: 100,
                     contraste = matchedTv.contraste ?: 100,
                     saturacao = matchedTv.saturacao ?: 100,
                     zoom = matchedTv.zoom ?: 100,
                     volume = matchedTv.volume ?: 100,
-                    tempoTransicao = matchedTv.tempoTransicao ?: 500,
-                    modoReproducaoAtivo = matchedTv.modoReproducao ?: true
+                    tempoTransicao = matchedTv.tempoTransicao ?: 500
                 )
                 dao.saveConfig(newConfig)
                 Log.d("VisionCentral", "Configuração atualizada e salva no banco local")
@@ -157,97 +154,114 @@ class VisionRepository(context: Context) {
     suspend fun syncTvSettings(): Boolean {
         try {
             val config = dao.getConfig() ?: run {
-                Log.e("VisionCentral", "[Heartbeat] syncTvSettings interrompido: Config não encontrada no DAO")
+                Log.e("VisionCentral", "[Sync] Falha: Config não encontrada")
                 return false
             }
-            val token = config.token ?: run {
-                Log.e("VisionCentral", "[Heartbeat] syncTvSettings interrompido: Token não encontrado na configuração")
+            val tvId = config.tvId ?: run {
+                Log.e("VisionCentral", "[Sync] Falha: TV ID não vinculado")
                 return false
             }
 
-            Log.d("VisionCentral", "[Heartbeat] Iniciando syncTvSettings() para o token: $token")
+            Log.d("VisionCentral", "[Sync] Iniciando auditoria de sincronização para TV: $tvId")
 
-            // 1. Fetch TV by token (Always the source of truth)
-            Log.d("VisionCentral", "[Heartbeat] Consultando Supabase (tabela tvs) pelo token: $token")
+            // 1. Fetch from TVS table
             val tv = SupabaseClient.client.postgrest["tvs"]
-                .select { filter { eq("token", token) } }
-                .decodeSingleOrNull<Tv>()
+                .select { filter { eq("id", tvId) } }
+                .decodeSingleOrNull<Tv>() ?: run {
+                    Log.e("VisionCentral", "[Sync] Falha: Registro TV não encontrado no Supabase")
+                    return false
+                }
 
-            if (tv == null) {
-                Log.e("VisionCentral", "[Heartbeat] Sync falhou: TV não encontrada no Supabase para o token: $token")
-                // Se a TV não existe mais no Supabase, talvez devêssemos desvincular localmente
-                return false
-            }
+            Log.d("VisionCentral", "[CONFIG TVS] Recebido da tabela 'tvs':")
+            Log.d("VisionCentral", "  - orientacao: ${tv.orientacao}")
+            Log.d("VisionCentral", "  - proporcao: ${tv.proporcao}")
+            Log.d("VisionCentral", "  - modo_exibicao: ${tv.modoExibicao}")
+            Log.d("VisionCentral", "  - brilho: ${tv.brilho}")
+            Log.d("VisionCentral", "  - contraste: ${tv.contraste}")
+            Log.d("VisionCentral", "  - saturacao: ${tv.saturacao}")
+            Log.d("VisionCentral", "  - zoom: ${tv.zoom}")
+            Log.d("VisionCentral", "  - volume: ${tv.volume}")
+            Log.d("VisionCentral", "  - tempo_transicao: ${tv.tempoTransicao}")
+            Log.d("VisionCentral", "  - rotacao: ${tv.rotacao}")
 
-            Log.d("VisionCentral", "[Heartbeat] Supabase retornou TV: id=${tv.id}, nome=${tv.nome}, status=${tv.status}")
-            
-            // 2. Fetch separate config if exists (optional table configuracoes)
+            // 2. Fetch from CONFIGURACOES table (Resolucao, Autoplay, Orientacao-Override)
             val tvConfig: TvConfig? = try {
-                SupabaseClient.client.postgrest["configuracoes"]
-                    .select { filter { eq("tv_id", tv.id) } }
-                    .decodeSingleOrNull<TvConfig>()
+                val cfg = SupabaseClient.client.postgrest["configuracoes"]
+                    .select { 
+                        filter { 
+                            if (tv.clienteId != null) eq("cliente_id", tv.clienteId)
+                            else eq("id", "none") // Fallback if no client
+                        } 
+                    }.decodeSingleOrNull<TvConfig>()
+                
+                if (cfg != null) {
+                    Log.d("VisionCentral", "[CONFIG CONFIGURACOES] Recebido da tabela 'configuracoes':")
+                    Log.d("VisionCentral", "  - resolucao: ${cfg.resolucao}")
+                    Log.d("VisionCentral", "  - autoplay: ${cfg.autoplay}")
+                    Log.d("VisionCentral", "  - orientacao (override): ${cfg.orientacao}")
+                }
+                cfg
             } catch (e: Exception) {
-                Log.d("VisionCentral", "[Heartbeat] Sem registros na tabela configuracoes (opcional)")
+                Log.d("VisionCentral", "[Sync] Tabela 'configuracoes' não acessível ou vazia: ${e.message}")
                 null
             }
 
-            // 3. Prepare updated configuration
-            val currentConfig = dao.getConfig()!!
-            var updatedConfig = currentConfig.copy(
-                tvId = tv.id,
-                tvName = tv.nome ?: currentConfig.tvName,
-                clienteId = tv.clienteId ?: currentConfig.clienteId,
-                orientacao = tv.orientacao ?: currentConfig.orientacao ?: "Horizontal",
-                rotacao = tv.rotacao ?: currentConfig.rotacao ?: "0",
-                proporcao = tv.proporcao ?: currentConfig.proporcao ?: "16:9",
-                resolucao = tv.resolucao ?: currentConfig.resolucao ?: "1080p",
-                ajusteTela = tv.ajusteTela ?: currentConfig.ajusteTela ?: "Cover",
-                modoExibicao = tv.modoExibicao ?: currentConfig.modoExibicao ?: "CenterInside",
-                brilho = tv.brilho ?: currentConfig.brilho ?: 100,
-                contraste = tv.contraste ?: currentConfig.contraste ?: 100,
-                saturacao = tv.saturacao ?: currentConfig.saturacao ?: 100,
-                zoom = tv.zoom ?: currentConfig.zoom ?: 100,
-                volume = tv.volume ?: currentConfig.volume ?: 100,
-                tempoTransicao = tv.tempoTransicao ?: currentConfig.tempoTransicao ?: 500,
-                modoReproducaoAtivo = tv.modoReproducao ?: currentConfig.modoReproducaoAtivo ?: true
+            // 3. Prepare updated configuration with strict mapping
+            val current = dao.getConfig()!!
+            
+            // Apply fields from TVS
+            var next = current.copy(
+                tvName = tv.nome ?: current.tvName,
+                clienteId = tv.clienteId ?: current.clienteId,
+                orientacao = tv.orientacao ?: current.orientacao,
+                rotacao = tv.rotacao ?: current.rotacao,
+                proporcao = tv.proporcao ?: current.proporcao,
+                modoExibicao = tv.modoExibicao ?: current.modoExibicao,
+                brilho = tv.brilho ?: current.brilho,
+                contraste = tv.contraste ?: current.contraste,
+                saturacao = tv.saturacao ?: current.saturacao,
+                zoom = tv.zoom ?: current.zoom,
+                volume = tv.volume ?: current.volume,
+                tempoTransicao = tv.tempoTransicao ?: current.tempoTransicao
             )
 
-            // Override with separate config if available
+            // Apply overrides/exclusive fields from CONFIGURACOES
             tvConfig?.let { cfg ->
-                updatedConfig = updatedConfig.copy(
-                    rotacao = cfg.rotacao ?: updatedConfig.rotacao,
-                    orientacao = cfg.orientacao ?: updatedConfig.orientacao,
-                    proporcao = cfg.proporcao ?: updatedConfig.proporcao,
-                    resolucao = cfg.resolucao ?: updatedConfig.resolucao,
-                    ajusteTela = cfg.ajusteTela ?: updatedConfig.ajusteTela,
-                    modoExibicao = cfg.modoExibicao ?: updatedConfig.modoExibicao,
-                    brilho = cfg.brilho ?: updatedConfig.brilho,
-                    contraste = cfg.contraste ?: updatedConfig.contraste,
-                    saturacao = cfg.saturacao ?: updatedConfig.saturacao,
-                    zoom = cfg.zoom ?: updatedConfig.zoom,
-                    volume = cfg.volume ?: updatedConfig.volume,
-                    tempoTransicao = cfg.tempoTransicao ?: updatedConfig.tempoTransicao,
-                    modoReproducaoAtivo = cfg.modoReproducao ?: updatedConfig.modoReproducaoAtivo
+                next = next.copy(
+                    resolucao = cfg.resolucao ?: next.resolucao,
+                    autoplay = cfg.autoplay ?: next.autoplay,
+                    orientacao = cfg.orientacao ?: next.orientacao // Override if present in config
                 )
             }
 
+            // Logging changes
+            Log.d("VisionCentral", "[CONFIG FINAL] Comparando com configuração local:")
+            if (next.orientacao != current.orientacao) Log.d("VisionCentral", "  - CAMPO ALTERADO: orientacao | VALOR: ${current.orientacao} -> ${next.orientacao}")
+            if (next.rotacao != current.rotacao) Log.d("VisionCentral", "  - CAMPO ALTERADO: rotacao | VALOR: ${current.rotacao} -> ${next.rotacao}")
+            if (next.resolucao != current.resolucao) Log.d("VisionCentral", "  - CAMPO ALTERADO: resolucao | VALOR: ${current.resolucao} -> ${next.resolucao}")
+            if (next.autoplay != current.autoplay) Log.d("VisionCentral", "  - CAMPO ALTERADO: autoplay | VALOR: ${current.autoplay} -> ${next.autoplay}")
+            if (next.modoExibicao != current.modoExibicao) Log.d("VisionCentral", "  - CAMPO ALTERADO: modoExibicao | VALOR: ${current.modoExibicao} -> ${next.modoExibicao}")
+            if (next.zoom != current.zoom) Log.d("VisionCentral", "  - CAMPO ALTERADO: zoom | VALOR: ${current.zoom} -> ${next.zoom}")
+            if (next.volume != current.volume) Log.d("VisionCentral", "  - CAMPO ALTERADO: volume | VALOR: ${current.volume} -> ${next.volume}")
+
             // Save if changed
-            if (updatedConfig != currentConfig) {
-                Log.d("VisionCentral", "[Heartbeat] Novas configurações detectadas. Salvando localmente.")
-                dao.saveConfig(updatedConfig)
+            if (next != current) {
+                Log.d("VisionCentral", "[Sync] Alterações detectadas. Salvando no banco local.")
+                dao.saveConfig(next)
+            } else {
+                Log.d("VisionCentral", "[Sync] Nenhuma alteração detectada nas configurações.")
             }
 
             // 4. Sync Playlist if we have a client ID
-            updatedConfig.clienteId?.let { 
+            next.clienteId?.let { 
                 syncPlaylistInternal(it, tv) 
             } ?: run {
-                // Se não tem clienteId, apenas atualiza o heartbeat normal
                 updateHeartbeat(isSync = false)
             }
 
             return true
         } catch (e: Exception) {
-            Log.e("VisionCentral", "[Heartbeat] Erro na sincronização/heartbeat", e)
+            Log.e("VisionCentral", "[Sync] Erro crítico na sincronização", e)
             return false
         }
     }
@@ -399,7 +413,7 @@ class VisionRepository(context: Context) {
 
     suspend fun setPlaybackMode(active: Boolean) {
         val config = dao.getConfig() ?: return
-        dao.saveConfig(config.copy(modoReproducaoAtivo = active))
+        dao.saveConfig(config.copy(autoplay = active))
     }
 
     suspend fun getLocalPlaylist(): LocalPlaylist? = dao.getPlaylist()

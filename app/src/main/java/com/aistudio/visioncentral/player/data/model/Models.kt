@@ -7,47 +7,34 @@ import kotlinx.serialization.Serializable
 data class Tv(
     @SerialName("id") val id: String,
     @SerialName("cliente_id") val clienteId: String? = null,
-    @SerialName("nome") val nome: String,
+    @SerialName("nome") val nome: String? = null,
     @SerialName("token") val token: String,
     @SerialName("playlist_id") val playlistId: String? = null,
     @SerialName("status") val status: String = "Offline",
-    @SerialName("uptime") val uptime: String? = "0h 0m",
+    @SerialName("uptime") val uptime: String? = null,
     @SerialName("ultima_sincronizacao") val ultimaSincronizacao: String? = null,
     @SerialName("ultima_conexao") val ultimaConexao: String? = null,
     @SerialName("criado_em") val criadoEm: String? = null,
-    // Add fields that might be directly in TV table
-    @SerialName("rotacao") val rotacao: String? = "0",
-    @SerialName("orientacao") val orientacao: String? = "Horizontal",
-    @SerialName("proporcao") val proporcao: String? = "16:9",
-    @SerialName("resolucao") val resolucao: String? = "1080p",
-    @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
-    @SerialName("modo_exibicao") val modoExibicao: String? = "CenterInside",
-    @SerialName("brilho") val brilho: Int? = 100,
-    @SerialName("contraste") val contraste: Int? = 100,
-    @SerialName("saturacao") val saturacao: Int? = 100,
-    @SerialName("zoom") val zoom: Int? = 100,
-    @SerialName("volume") val volume: Int? = 100,
-    @SerialName("tempo_transicao") val tempoTransicao: Int? = 500,
-    @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
+    @SerialName("orientacao") val orientacao: String? = null,
+    @SerialName("proporcao") val proporcao: String? = null,
+    @SerialName("modo_exibicao") val modoExibicao: String? = null,
+    @SerialName("brilho") val brilho: Int? = null,
+    @SerialName("contraste") val contraste: Int? = null,
+    @SerialName("saturacao") val saturacao: Int? = null,
+    @SerialName("zoom") val zoom: Int? = null,
+    @SerialName("volume") val volume: Int? = null,
+    @SerialName("tempo_transicao") val tempoTransicao: Int? = null,
+    @SerialName("rotacao") val rotacao: String? = null
 )
 
 @Serializable
 data class TvConfig(
     @SerialName("id") val id: String,
-    @SerialName("tv_id") val tvId: String,
-    @SerialName("rotacao") val rotacao: String? = "0",
-    @SerialName("orientacao") val orientacao: String? = "Horizontal",
-    @SerialName("proporcao") val proporcao: String? = "16:9",
-    @SerialName("resolucao") val resolucao: String? = "1080p",
-    @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
-    @SerialName("modo_exibicao") val modoExibicao: String? = "CenterInside",
-    @SerialName("brilho") val brilho: Int? = 100,
-    @SerialName("contraste") val contraste: Int? = 100,
-    @SerialName("saturacao") val saturacao: Int? = 100,
-    @SerialName("zoom") val zoom: Int? = 100,
-    @SerialName("volume") val volume: Int? = 100,
-    @SerialName("tempo_transicao") val tempoTransicao: Int? = 500,
-    @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
+    @SerialName("cliente_id") val clienteId: String? = null,
+    @SerialName("orientacao") val orientacao: String? = null,
+    @SerialName("resolucao") val resolucao: String? = null,
+    @SerialName("autoplay") val autoplay: Boolean? = null,
+    @SerialName("criado_em") val criadoEm: String? = null
 )
 
 @Serializable

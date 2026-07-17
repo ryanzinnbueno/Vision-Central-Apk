@@ -39,17 +39,18 @@ import android.webkit.WebViewClient
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: Boolean = false) {
-    Log.d("VisionCentral", "PlayerScreen recompondo - Propriedades aplicadas:")
+    Log.d("VisionCentral", "[CONFIG APLICADA NA UI]")
     Log.d("VisionCentral", "  - Orientacao: ${config?.orientacao}")
+    Log.d("VisionCentral", "  - Rotacao: ${config?.rotacao}")
     Log.d("VisionCentral", "  - Proporcao: ${config?.proporcao}")
     Log.d("VisionCentral", "  - Modo Exibicao: ${config?.modoExibicao}")
+    Log.d("VisionCentral", "  - Zoom: ${config?.zoom}")
     Log.d("VisionCentral", "  - Brilho: ${config?.brilho}")
     Log.d("VisionCentral", "  - Contraste: ${config?.contraste}")
     Log.d("VisionCentral", "  - Saturacao: ${config?.saturacao}")
-    Log.d("VisionCentral", "  - Zoom: ${config?.zoom}")
     Log.d("VisionCentral", "  - Volume: ${config?.volume}")
     Log.d("VisionCentral", "  - Tempo Transicao: ${config?.tempoTransicao}")
-    Log.d("VisionCentral", "  - Modo Reproducao: ${config?.modoReproducaoAtivo}")
+    Log.d("VisionCentral", "  - Autoplay: ${config?.autoplay}")
 
     var currentIndex by remember(items) { mutableIntStateOf(0) }
     val currentItem = items.getOrNull(currentIndex) ?: return
@@ -91,7 +92,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
         matrix
     }
 
-    val scaleString = config?.modoExibicao ?: config?.ajusteTela ?: "Fit"
+    val scaleString = config?.modoExibicao ?: "Fit"
     val contentScale = when (scaleString) {
         "Fit", "Contain" -> ContentScale.Fit
         "Fill" -> ContentScale.FillBounds

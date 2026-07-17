@@ -72,7 +72,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         // Inicia o heartbeat assim que validado, independente do modo de reprodução
                         startHeartbeat()
                         
-                        if (config.modoReproducaoAtivo) {
+                        if (config.autoplay) {
                             Log.d("VisionCentral", "Iniciando sincronização...")
                             startSync(config.clienteId!!)
                         } else {
@@ -121,7 +121,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val playlist = repository.syncPlaylist(clienteId)
                 val config = deviceConfig.value
-                if (config != null && !config.modoReproducaoAtivo) {
+                if (config != null && !config.autoplay) {
                     Log.d("VisionCentral", "Sincronização concluída, mas reprodução está desativada")
                     _uiState.value = UiState.Stopped
                     _isSyncing.value = false
@@ -210,7 +210,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                     Log.d("VisionCentral", "[Heartbeat] Mudança na playlist detectada. Atualizando UI.")
                                     _uiState.value = UiState.Playing(newPlaylist, newItems)
                                 }
-                            } else if (currentState is UiState.Stopped && currentConfig.modoReproducaoAtivo) {
+                            } else if (currentState is UiState.Stopped && currentConfig.autoplay) {
                                 if (newItems.isNotEmpty()) {
                                     Log.d("VisionCentral", "[Heartbeat] Reprodução reativada. Mudando para Playing.")
                                     _uiState.value = UiState.Playing(newPlaylist, newItems)
