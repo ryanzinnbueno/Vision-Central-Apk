@@ -39,8 +39,11 @@ import android.webkit.WebViewClient
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: Boolean = false) {
-    Log.d("VisionCentral", "========== [Realtime Audit] UI REAGIU ==========")
-    Log.d("VisionCentral", "[Realtime Audit] Configuração aplicada na UI:")
+    Log.d("VisionCentral", "[SYNC-12] Compose recompôs")
+    Log.d("VisionCentral", "  - Items size: ${items.size}")
+    Log.d("VisionCentral", "  - Config: $config")
+    Log.d("VisionCentral", "[Jogador] Compose recompôs")
+    Log.d("VisionCentral", "[Jogador] Nova configuração aplicada:")
     Log.d("VisionCentral", "  - Orientacao: ${config?.orientacao}")
     Log.d("VisionCentral", "  - Rotacao: ${config?.rotacao}")
     Log.d("VisionCentral", "  - Proporcao: ${config?.proporcao}")
@@ -126,6 +129,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
         }
     }
 
+    Log.d("VisionCentral", "[SYNC-13] Aplicando configuração")
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -139,6 +143,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
                 renderEffect = null // This is for newer APIs, but we can use ColorFilter in children
             }
     ) {
+        Log.d("VisionCentral", "[SYNC-14] Configuração aplicada")
         Crossfade(
             targetState = currentItem,
             animationSpec = tween(durationMillis = transitionTime)

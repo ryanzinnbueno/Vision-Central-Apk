@@ -50,20 +50,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     init {
         Log.d("VisionCentral", "PlayerViewModel inicializado")
         
-        // Observe playlist changes to update UI automatically
+        // Observador de Configuração
+        repository.configFlow.onEach { config ->
+            if (config != null) {
+                Log.d("VisionCentral", "[SYNC-11] Nova configuração recebida: $config")
+                if (!config.isLinked && _uiState.value !is UiState.Activation && _uiState.value !is UiState.Splash) {
+                    Log.d("VisionCentral", "[Jogador] Dispositivo desvinculado detectado. Mudando para Ativação.")
+                    _uiState.value = UiState.Activation()
+                }
+            }
+        }.launchIn(viewModelScope)
+
+        // Observador de Playlist
         repository.playlistFlow.onEach { playlist ->
             if (playlist != null) {
+                Log.d("VisionCentral", "[Jogador] Nova playlist aplicada")
                 val items = repository.parseItems(playlist.itemsJson)
                 val currentState = _uiState.value
                 
                 if (currentState is UiState.Playing) {
                     if (items != currentState.items || playlist.id != currentState.playlist.id) {
-                        Log.d("VisionCentral", "[Observer] Playlist alterada detectada via Flow. Atualizando UI.")
                         _uiState.value = UiState.Playing(playlist, items)
                     }
                 } else if (currentState !is UiState.Splash && currentState !is UiState.Activation && currentState !is UiState.Syncing) {
                     if (items.isNotEmpty()) {
-                        Log.d("VisionCentral", "[Observer] Mudando para Playing via Flow.")
                         _uiState.value = UiState.Playing(playlist, items)
                     }
                 }
@@ -75,29 +85,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun checkStatus() {
         viewModelScope.launch {
-            Log.d("VisionCentral", "checkStatus() chamado")
+            Log.d("VisionCentral", "[Jogador] Verificando status...")
             _uiState.value = UiState.Splash
             delay(2000)
 
             try {
                 val config = repository.getOrCreateConfig()
-                Log.d("VisionCentral", "Configuração atual: linked=${config.isLinked}, tvId=${config.tvId}")
-                
                 if (!config.isLinked) {
-                    Log.d("VisionCentral", "Dispositivo não vinculado, indo para tela de ativação")
                     _uiState.value = UiState.Activation()
                 } else {
-                    Log.d("VisionCentral", "Validando sessão no Supabase...")
                     if (repository.isConfigValid()) {
-                        Log.d("VisionCentral", "Supabase conectado")
-                        // Inicia o heartbeat e o realtime sync
-                        startHeartbeat()
+                        repository.startHeartbeat(viewModelScope)
                         repository.startRealtimeSync(viewModelScope)
-                        
-                        Log.d("VisionCentral", "Iniciando sincronização inicial...")
                         startSync(config.clienteId!!)
                     } else {
-                        Log.d("VisionCentral", "Configuração inválida ou dispositivo removido")
                         _uiState.value = UiState.Activation("Dispositivo removido ou token inválido.")
                     }
                 }
@@ -110,20 +111,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun activate(token: String) {
         viewModelScope.launch {
-            Log.d("VisionCentral", "Iniciando ativação com token: $token")
-            // Small delay to allow keyboard animation to finish if hidden in the UI
+            Log.d("VisionCentral", "[Jogador] Iniciando ativação...")
             delay(1000)
             _uiState.value = UiState.Syncing("Validando token...")
             try {
                 val newConfig = repository.validateToken(token)
                 if (newConfig?.isLinked == true) {
-                    Log.d("VisionCentral", "Supabase conectado")
-                    Log.d("VisionCentral", "Ativação bem-sucedida para clienteId: ${newConfig.clienteId}")
-                    startHeartbeat()
+                    repository.startHeartbeat(viewModelScope)
                     repository.startRealtimeSync(viewModelScope)
                     startSync(newConfig.clienteId!!)
                 } else {
-                    Log.d("VisionCentral", "Token inválido")
                     _uiState.value = UiState.Activation("Token inválido ou não encontrado.")
                 }
             } catch (e: Exception) {
@@ -135,44 +132,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startSync(clienteId: String) {
         viewModelScope.launch {
-            Log.d("VisionCentral", "Sincronizando...")
+            Log.d("VisionCentral", "[Jogador] Iniciando sincronização...")
             _isSyncing.value = true
             _uiState.value = UiState.Syncing("Sincronizando conteúdos...")
             try {
-                val playlist = repository.syncPlaylist(clienteId)
-                
-                if (playlist != null) {
-                    val items = repository.parseItems(playlist.itemsJson)
-                    if (items.isNotEmpty()) {
-                        Log.d("VisionCentral", "Configuração aplicada")
-                        _uiState.value = UiState.Playing(playlist, items)
-                        _isSyncing.value = false
-                    } else {
-                        Log.d("VisionCentral", "Playlist carregada, mas está vazia")
-                        _uiState.value = UiState.Error("Playlist vazia ou sem mídias válidas.")
-                        _isSyncing.value = false
-                    }
-                } else {
-                    Log.d("VisionCentral", "Playlist remota falhou, tentando local...")
-                    // Try local
-                    val local = repository.getLocalPlaylist()
-                    if (local != null) {
-                        val items = repository.parseItems(local.itemsJson)
-                        if (items.isNotEmpty()) {
-                            Log.d("VisionCentral", "Playlist local carregada com ${items.size} itens")
-                            _uiState.value = UiState.Playing(local, items)
-                            _isSyncing.value = false
-                        } else {
-                            Log.d("VisionCentral", "Playlist local também está vazia")
-                            _uiState.value = UiState.Error("Não foi possível carregar a playlist.")
-                            _isSyncing.value = false
-                        }
-                    } else {
-                        Log.d("VisionCentral", "Nenhuma playlist local encontrada")
-                        _uiState.value = UiState.Error("Não foi possível carregar a playlist.")
-                        _isSyncing.value = false
-                    }
-                }
+                repository.syncTvSettings()
+                _isSyncing.value = false
             } catch (e: Exception) {
                 Log.e("VisionCentral", "Erro em startSync", e)
                 _uiState.value = UiState.Error("Erro na sincronização: ${e.message}")
@@ -181,43 +146,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private var heartbeatJob: kotlinx.coroutines.Job? = null
-
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = viewModelScope.launch {
-            Log.d("VisionCentral", "[Heartbeat] Loop de batimento cardíaco iniciado.")
-            while (true) {
-                try {
-                    val config = repository.getOrCreateConfig()
-                    if (!config.isLinked || config.tvId == null) {
-                        Log.w("VisionCentral", "[Heartbeat] Dispositivo não vinculado. Parando heartbeat.")
-                        _uiState.value = UiState.Activation()
-                        break
-                    }
-
-                    // Check session validity
-                    if (!repository.isConfigValid()) {
-                        Log.w("VisionCentral", "[Heartbeat] Sessão inválida no Supabase. Parando heartbeat.")
-                        _uiState.value = UiState.Activation("Dispositivo desvinculado.")
-                        break
-                    }
-                    
-                    // Heartbeat only for online status every 30 seconds (standard heartbeat)
-                    Log.d("VisionCentral", "[Heartbeat] Atualizando status ONLINE...")
-                    repository.updateHeartbeat(isSync = false)
-                } catch (e: Exception) {
-                    Log.e("VisionCentral", "[Heartbeat] Erro no loop de heartbeat", e)
-                }
-                
-                delay(30000)
-            }
-        }
-    }
-
     fun unlink() {
         viewModelScope.launch {
-            repository.stopRealtimeSync()
             repository.unlink()
             checkStatus()
         }
@@ -234,7 +164,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         super.onCleared()
-        heartbeatJob?.cancel()
-        Log.d("VisionCentral", "[Heartbeat] PlayerViewModel onCleared. Heartbeat cancelado localmente.")
+        repository.stopHeartbeat()
+        repository.stopRealtimeSync()
     }
 }
