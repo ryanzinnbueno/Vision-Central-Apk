@@ -50,7 +50,6 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
     Log.d("VisionCentral", "  - Saturacao: ${config?.saturacao}")
     Log.d("VisionCentral", "  - Volume: ${config?.volume}")
     Log.d("VisionCentral", "  - Tempo Transicao: ${config?.tempoTransicao}")
-    Log.d("VisionCentral", "  - Autoplay: ${config?.autoplay}")
 
     var currentIndex by remember(items) { mutableIntStateOf(0) }
     val currentItem = items.getOrNull(currentIndex) ?: return

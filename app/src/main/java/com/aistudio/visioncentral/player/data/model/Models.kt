@@ -28,16 +28,6 @@ data class Tv(
 )
 
 @Serializable
-data class TvConfig(
-    @SerialName("id") val id: String,
-    @SerialName("cliente_id") val clienteId: String? = null,
-    @SerialName("orientacao") val orientacao: String? = null,
-    @SerialName("resolucao") val resolucao: String? = null,
-    @SerialName("autoplay") val autoplay: Boolean? = null,
-    @SerialName("criado_em") val criadoEm: String? = null
-)
-
-@Serializable
 data class Cliente(
     @SerialName("id") val id: String,
     @SerialName("nome") val nome: String,
@@ -72,4 +62,11 @@ data class PlaylistMidia(
     @SerialName("midia_id") val midiaId: String,
     @SerialName("ordem") val ordem: Int,
     @SerialName("duracao") val duracao: Int
+)
+
+@Serializable
+data class HeartbeatUpdate(
+    @SerialName("status") val status: String,
+    @SerialName("ultima_conexao") val ultimaConexao: String,
+    @SerialName("ultima_sincronizacao") val ultimaSincronizacao: String? = null
 )

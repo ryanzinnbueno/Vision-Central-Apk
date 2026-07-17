@@ -13,6 +13,9 @@ interface VisionDao {
     @Query("SELECT * FROM local_playlists LIMIT 1")
     suspend fun getPlaylist(): LocalPlaylist?
 
+    @Query("SELECT * FROM local_playlists LIMIT 1")
+    fun getPlaylistFlow(): Flow<LocalPlaylist?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePlaylist(playlist: LocalPlaylist)
 
@@ -41,7 +44,7 @@ interface VisionDao {
     suspend fun deleteDownloadedMedia(id: String)
 }
 
-@Database(entities = [LocalPlaylist::class, DeviceConfig::class, DownloadedMedia::class], version = 7, exportSchema = false)
+@Database(entities = [LocalPlaylist::class, DeviceConfig::class, DownloadedMedia::class], version = 8, exportSchema = false)
 abstract class VisionDatabase : RoomDatabase() {
     abstract fun dao(): VisionDao
 }

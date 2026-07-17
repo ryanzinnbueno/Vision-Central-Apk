@@ -98,7 +98,6 @@ class MainActivity : ComponentActivity() {
                   is UiState.Syncing -> SyncingScreen(s.message)
                   is UiState.Playing -> PlayerScreen(s.items, config = config, isPaused = showTechnicalPanel)
                   is UiState.Error -> ErrorScreen(s.message) { viewModel.checkStatus() }
-                  is UiState.Stopped -> StoppedScreen { showTechnicalPanel = true }
                   is UiState.TechnicalPanel -> {
                     // This state is handled by showTechnicalPanel variable for better overlay
                   }
@@ -125,9 +124,6 @@ class MainActivity : ComponentActivity() {
                   onSyncNow = {
                     showTechnicalPanel = false
                     viewModel.syncNow()
-                  },
-                  onTogglePlaybackMode = { active ->
-                    viewModel.setPlaybackMode(active)
                   },
                   onUnlink = {
                     showTechnicalPanel = false

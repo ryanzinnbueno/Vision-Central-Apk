@@ -28,7 +28,6 @@ sealed class UiState {
     data class Syncing(val message: String) : UiState()
     data class Playing(val playlist: LocalPlaylist, val items: List<LocalMediaItem>) : UiState()
     data class Error(val message: String) : UiState()
-    object Stopped : UiState()
     object TechnicalPanel : UiState()
 }
 
@@ -50,6 +49,27 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         Log.d("VisionCentral", "PlayerViewModel inicializado")
+        
+        // Observe playlist changes to update UI automatically
+        repository.playlistFlow.onEach { playlist ->
+            if (playlist != null) {
+                val items = repository.parseItems(playlist.itemsJson)
+                val currentState = _uiState.value
+                
+                if (currentState is UiState.Playing) {
+                    if (items != currentState.items || playlist.id != currentState.playlist.id) {
+                        Log.d("VisionCentral", "[Observer] Playlist alterada detectada via Flow. Atualizando UI.")
+                        _uiState.value = UiState.Playing(playlist, items)
+                    }
+                } else if (currentState !is UiState.Splash && currentState !is UiState.Activation && currentState !is UiState.Syncing) {
+                    if (items.isNotEmpty()) {
+                        Log.d("VisionCentral", "[Observer] Mudando para Playing via Flow.")
+                        _uiState.value = UiState.Playing(playlist, items)
+                    }
+                }
+            }
+        }.launchIn(viewModelScope)
+
         checkStatus()
     }
 
@@ -69,16 +89,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     Log.d("VisionCentral", "Validando sessão no Supabase...")
                     if (repository.isConfigValid()) {
-                        // Inicia o heartbeat assim que validado, independente do modo de reprodução
+                        Log.d("VisionCentral", "Supabase conectado")
+                        // Inicia o heartbeat e o realtime sync
                         startHeartbeat()
+                        repository.startRealtimeSync(viewModelScope)
                         
-                        if (config.autoplay) {
-                            Log.d("VisionCentral", "Iniciando sincronização...")
-                            startSync(config.clienteId!!)
-                        } else {
-                            Log.d("VisionCentral", "Reprodução desativada, indo para tela Stopped")
-                            _uiState.value = UiState.Stopped
-                        }
+                        Log.d("VisionCentral", "Iniciando sincronização inicial...")
+                        startSync(config.clienteId!!)
                     } else {
                         Log.d("VisionCentral", "Configuração inválida ou dispositivo removido")
                         _uiState.value = UiState.Activation("Dispositivo removido ou token inválido.")
@@ -100,7 +117,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val newConfig = repository.validateToken(token)
                 if (newConfig?.isLinked == true) {
+                    Log.d("VisionCentral", "Supabase conectado")
                     Log.d("VisionCentral", "Ativação bem-sucedida para clienteId: ${newConfig.clienteId}")
+                    startHeartbeat()
+                    repository.startRealtimeSync(viewModelScope)
                     startSync(newConfig.clienteId!!)
                 } else {
                     Log.d("VisionCentral", "Token inválido")
@@ -115,23 +135,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startSync(clienteId: String) {
         viewModelScope.launch {
-            Log.d("VisionCentral", "startSync() iniciado para clienteId: $clienteId")
+            Log.d("VisionCentral", "Sincronizando...")
             _isSyncing.value = true
             _uiState.value = UiState.Syncing("Sincronizando conteúdos...")
             try {
                 val playlist = repository.syncPlaylist(clienteId)
-                val config = deviceConfig.value
-                if (config != null && !config.autoplay) {
-                    Log.d("VisionCentral", "Sincronização concluída, mas reprodução está desativada")
-                    _uiState.value = UiState.Stopped
-                    _isSyncing.value = false
-                    return@launch
-                }
                 
                 if (playlist != null) {
                     val items = repository.parseItems(playlist.itemsJson)
                     if (items.isNotEmpty()) {
-                        Log.d("VisionCentral", "Playlist carregada com ${items.size} itens. Iniciando reprodução.")
+                        Log.d("VisionCentral", "Configuração aplicada")
                         _uiState.value = UiState.Playing(playlist, items)
                         _isSyncing.value = false
                     } else {
@@ -190,88 +203,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         break
                     }
                     
-                    // Polling Sync & Heartbeat every 10 seconds
-                    Log.d("VisionCentral", "[Heartbeat] Iniciando ciclo de sincronização/heartbeat...")
-                    _isSyncing.value = true
-                    
-                    // This fetches all TV settings and updates local config, also updates heartbeat
-                    val syncSuccess = repository.syncTvSettings()
-                    Log.d("VisionCentral", "[Heartbeat] Resultado do syncTvSettings: $syncSuccess")
-                    
-                    val currentConfig = repository.getOrCreateConfig()
-                    if (currentConfig.clienteId != null) {
-                        val newPlaylist = repository.getPlaylist()
-                        if (newPlaylist != null) {
-                            val newItems = repository.parseItems(newPlaylist.itemsJson)
-                            val currentState = _uiState.value
-                            
-                            if (currentState is UiState.Playing) {
-                                if (newItems != currentState.items || newPlaylist.id != currentState.playlist.id) {
-                                    Log.d("VisionCentral", "[Heartbeat] Mudança na playlist detectada. Atualizando UI.")
-                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
-                                }
-                            } else if (currentState is UiState.Stopped && currentConfig.autoplay) {
-                                if (newItems.isNotEmpty()) {
-                                    Log.d("VisionCentral", "[Heartbeat] Reprodução reativada. Mudando para Playing.")
-                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
-                                }
-                            } else if (currentState !is UiState.Playing && currentState !is UiState.Stopped && currentState !is UiState.Splash) {
-                                if (newItems.isNotEmpty()) {
-                                    _uiState.value = UiState.Playing(newPlaylist, newItems)
-                                }
-                            }
-                        }
-                    } else {
-                        // Se não tem clienteId, força o heartbeat se o syncTvSettings não o fez
-                        Log.d("VisionCentral", "[Heartbeat] Sem clienteId, forçando updateHeartbeat isolado.")
-                        repository.updateHeartbeat(isSync = false)
-                    }
+                    // Heartbeat only for online status every 30 seconds (standard heartbeat)
+                    Log.d("VisionCentral", "[Heartbeat] Atualizando status ONLINE...")
+                    repository.updateHeartbeat(isSync = false)
                 } catch (e: Exception) {
                     Log.e("VisionCentral", "[Heartbeat] Erro no loop de heartbeat", e)
-                } finally {
-                    _isSyncing.value = false
                 }
                 
-                delay(10000)
+                delay(30000)
             }
         }
     }
 
     fun unlink() {
         viewModelScope.launch {
+            repository.stopRealtimeSync()
             repository.unlink()
             checkStatus()
-        }
-    }
-
-    fun openTechnicalPanel() {
-        _uiState.value = UiState.TechnicalPanel
-    }
-
-    fun closeTechnicalPanel() {
-        val config = deviceConfig.value
-        if (config != null && config.isLinked) {
-            val lastState = _uiState.value
-            if (lastState is UiState.TechnicalPanel) {
-                // If it was in technical panel, try to go back to playing or sync
-                checkStatus()
-            }
-        } else {
-            _uiState.value = UiState.Activation()
-        }
-    }
-
-    fun setPlaybackMode(active: Boolean) {
-        viewModelScope.launch {
-            repository.setPlaybackMode(active)
-            if (active) {
-                val config = repository.getOrCreateConfig()
-                if (config.clienteId != null) {
-                    startSync(config.clienteId)
-                }
-            } else {
-                _uiState.value = UiState.Stopped
-            }
         }
     }
 

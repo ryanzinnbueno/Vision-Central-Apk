@@ -306,7 +306,6 @@ fun TechnicalPanelDialog(
     downloadProgress: Map<String, Float>,
     storageError: String?,
     onSyncNow: () -> Unit,
-    onTogglePlaybackMode: (Boolean) -> Unit,
     onUnlink: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -429,24 +428,6 @@ fun TechnicalPanelDialog(
                     }
 
                     item {
-                        if (!config.autoplay) {
-                            TvOptionButton(
-                                "Ativar Reprodução",
-                                onClick = { onTogglePlaybackMode(true) },
-                                backgroundColor = Color(0xFF22D3EE),
-                                contentColor = Color.Black
-                            )
-                        } else {
-                            TvSwitchRow(
-                                label = "Modo Reprodução",
-                                checked = config.autoplay,
-                                onCheckedChange = onTogglePlaybackMode
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-
-                    item {
                         TvOptionButton(
                             "Desvincular dispositivo",
                             color = Color(0xFFF87171),
@@ -556,46 +537,6 @@ private fun InfoRow(label: String, value: String) {
     Row(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(text = label, color = Color.Gray, fontSize = 14.sp, modifier = Modifier.width(100.dp))
         Text(text = value, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-fun StoppedScreen(onOpenTechnicalPanel: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF050508)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = painterResource(id = R.drawable.vision_central_logo_watermark_1783967060496),
-                contentDescription = null,
-                modifier = Modifier.size(100.dp).alpha(0.5f)
-            )
-            Spacer(modifier = Modifier.height(48.dp))
-            Text(
-                text = "Reprodução Interrompida",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "O modo de reprodução está desativado.",
-                fontSize = 16.sp,
-                color = Color.Gray
-            )
-            Spacer(modifier = Modifier.height(48.dp))
-            Button(
-                onClick = onOpenTechnicalPanel,
-                modifier = Modifier.height(56.dp).width(250.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Abrir Painel Técnico", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        }
     }
 }
 

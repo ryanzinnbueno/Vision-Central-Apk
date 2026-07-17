@@ -11,18 +11,27 @@ import com.aistudio.visioncentral.player.data.model.Midia
 import com.aistudio.visioncentral.player.data.model.Playlist
 import com.aistudio.visioncentral.player.data.model.PlaylistMidia
 import com.aistudio.visioncentral.player.data.model.Tv
+import com.aistudio.visioncentral.player.data.model.HeartbeatUpdate
 import com.aistudio.visioncentral.player.data.remote.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import com.aistudio.visioncentral.player.data.download.MediaDownloadManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.util.UUID
-
-import com.aistudio.visioncentral.player.data.model.TvConfig
 
 class VisionRepository(context: Context) {
     private val db = Room.databaseBuilder(
@@ -37,6 +46,65 @@ class VisionRepository(context: Context) {
     val isDownloading = downloadManager.isDownloading
     val storageError = downloadManager.storageError
     val configFlow = dao.getConfigFlow()
+    val playlistFlow = dao.getPlaylistFlow()
+
+    private var realtimeJob: Job? = null
+
+    fun startRealtimeSync(scope: CoroutineScope) {
+        realtimeJob?.cancel()
+        realtimeJob = scope.launch {
+            val config = dao.getConfig() ?: return@launch
+            val tvId = config.tvId ?: return@launch
+            
+            Log.d("VisionCentral", "========== REALTIME INICIADO ==========")
+            Log.d("VisionCentral", "Aguardando alterações para TV: $tvId")
+            
+            try {
+                // Monitoramento de Status da Conexão
+                SupabaseClient.client.realtime.status.onEach { status ->
+                    when (status) {
+                        Realtime.Status.CONNECTED -> Log.d("VisionCentral", "WebSocket conectado")
+                        Realtime.Status.DISCONNECTED -> Log.d("VisionCentral", "Realtime desconectado")
+                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "Reconectando...")
+                        else -> Log.d("VisionCentral", "Status Realtime: $status")
+                    }
+                }.launchIn(this)
+
+                SupabaseClient.client.realtime.connect()
+                Log.d("VisionCentral", "Realtime conectado")
+
+                val channel = SupabaseClient.client.realtime.channel("tvs_changes")
+                Log.d("VisionCentral", "Canal criado")
+                
+                channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
+                    table = "tvs"
+                }.onEach { action ->
+                    val recordId = action.record["id"]?.jsonPrimitive?.contentOrNull
+                    
+                    if (recordId == tvId) {
+                        Log.d("VisionCentral", "Evento recebido: Realtime UPDATE")
+                        Log.d("VisionCentral", "TV alterada: $recordId")
+                        Log.d("VisionCentral", "Sincronizando...")
+                        syncTvSettings()
+                    }
+                }.launchIn(this)
+                
+                channel.subscribe()
+                Log.d("VisionCentral", "Canal inscrito")
+                Log.d("VisionCentral", "Realtime ativo")
+                Log.d("VisionCentral", "Aguardando alterações...")
+
+            } catch (e: Exception) {
+                Log.e("VisionCentral", "Erro ao iniciar Realtime", e)
+            }
+        }
+    }
+
+    fun stopRealtimeSync() {
+        realtimeJob?.cancel()
+        realtimeJob = null
+        Log.d("VisionCentral", "Realtime interrompido")
+    }
 
     suspend fun getOrCreateConfig(): DeviceConfig {
         val existing = dao.getConfig()
@@ -162,8 +230,6 @@ class VisionRepository(context: Context) {
                 return false
             }
 
-            Log.d("VisionCentral", "[Sync] Iniciando auditoria de sincronização para TV: $tvId")
-
             // 1. Fetch from TVS table
             val tv = SupabaseClient.client.postgrest["tvs"]
                 .select { filter { eq("id", tvId) } }
@@ -172,45 +238,19 @@ class VisionRepository(context: Context) {
                     return false
                 }
 
-            Log.d("VisionCentral", "[CONFIG TVS] Recebido da tabela 'tvs':")
-            Log.d("VisionCentral", "  - orientacao: ${tv.orientacao}")
-            Log.d("VisionCentral", "  - proporcao: ${tv.proporcao}")
-            Log.d("VisionCentral", "  - modo_exibicao: ${tv.modoExibicao}")
-            Log.d("VisionCentral", "  - brilho: ${tv.brilho}")
-            Log.d("VisionCentral", "  - contraste: ${tv.contraste}")
-            Log.d("VisionCentral", "  - saturacao: ${tv.saturacao}")
-            Log.d("VisionCentral", "  - zoom: ${tv.zoom}")
-            Log.d("VisionCentral", "  - volume: ${tv.volume}")
-            Log.d("VisionCentral", "  - tempo_transicao: ${tv.tempoTransicao}")
-            Log.d("VisionCentral", "  - rotacao: ${tv.rotacao}")
-
-            // 2. Fetch from CONFIGURACOES table (Resolucao, Autoplay, Orientacao-Override)
-            val tvConfig: TvConfig? = try {
-                val cfg = SupabaseClient.client.postgrest["configuracoes"]
-                    .select { 
-                        filter { 
-                            if (tv.clienteId != null) eq("cliente_id", tv.clienteId)
-                            else eq("id", "none") // Fallback if no client
-                        } 
-                    }.decodeSingleOrNull<TvConfig>()
-                
-                if (cfg != null) {
-                    Log.d("VisionCentral", "[CONFIG CONFIGURACOES] Recebido da tabela 'configuracoes':")
-                    Log.d("VisionCentral", "  - resolucao: ${cfg.resolucao}")
-                    Log.d("VisionCentral", "  - autoplay: ${cfg.autoplay}")
-                    Log.d("VisionCentral", "  - orientacao (override): ${cfg.orientacao}")
-                }
-                cfg
+            Log.d("VisionCentral", "========== CONFIG RECEBIDA ==========")
+            try {
+                val fullJson = Json { prettyPrint = true }.encodeToString(tv)
+                Log.d("VisionCentral", fullJson)
             } catch (e: Exception) {
-                Log.d("VisionCentral", "[Sync] Tabela 'configuracoes' não acessível ou vazia: ${e.message}")
-                null
+                Log.d("VisionCentral", tv.toString())
             }
 
-            // 3. Prepare updated configuration with strict mapping
+            // 2. Prepare updated configuration with strict mapping
             val current = dao.getConfig()!!
             
-            // Apply fields from TVS
-            var next = current.copy(
+            // Apply fields ONLY from TVS table
+            val next = current.copy(
                 tvName = tv.nome ?: current.tvName,
                 clienteId = tv.clienteId ?: current.clienteId,
                 orientacao = tv.orientacao ?: current.orientacao,
@@ -225,34 +265,31 @@ class VisionRepository(context: Context) {
                 tempoTransicao = tv.tempoTransicao ?: current.tempoTransicao
             )
 
-            // Apply overrides/exclusive fields from CONFIGURACOES
-            tvConfig?.let { cfg ->
-                next = next.copy(
-                    resolucao = cfg.resolucao ?: next.resolucao,
-                    autoplay = cfg.autoplay ?: next.autoplay,
-                    orientacao = cfg.orientacao ?: next.orientacao // Override if present in config
-                )
-            }
-
             // Logging changes
-            Log.d("VisionCentral", "[CONFIG FINAL] Comparando com configuração local:")
-            if (next.orientacao != current.orientacao) Log.d("VisionCentral", "  - CAMPO ALTERADO: orientacao | VALOR: ${current.orientacao} -> ${next.orientacao}")
-            if (next.rotacao != current.rotacao) Log.d("VisionCentral", "  - CAMPO ALTERADO: rotacao | VALOR: ${current.rotacao} -> ${next.rotacao}")
-            if (next.resolucao != current.resolucao) Log.d("VisionCentral", "  - CAMPO ALTERADO: resolucao | VALOR: ${current.resolucao} -> ${next.resolucao}")
-            if (next.autoplay != current.autoplay) Log.d("VisionCentral", "  - CAMPO ALTERADO: autoplay | VALOR: ${current.autoplay} -> ${next.autoplay}")
-            if (next.modoExibicao != current.modoExibicao) Log.d("VisionCentral", "  - CAMPO ALTERADO: modoExibicao | VALOR: ${current.modoExibicao} -> ${next.modoExibicao}")
-            if (next.zoom != current.zoom) Log.d("VisionCentral", "  - CAMPO ALTERADO: zoom | VALOR: ${current.zoom} -> ${next.zoom}")
-            if (next.volume != current.volume) Log.d("VisionCentral", "  - CAMPO ALTERADO: volume | VALOR: ${current.volume} -> ${next.volume}")
-
-            // Save if changed
             if (next != current) {
+                Log.d("VisionCentral", "Sincronizando...")
+                
+                compareAndLog("nome", current.tvName, next.tvName)
+                compareAndLog("orientacao", current.orientacao, next.orientacao)
+                compareAndLog("rotacao", current.rotacao, next.rotacao)
+                compareAndLog("proporcao", current.proporcao, next.proporcao)
+                compareAndLog("modo_exibicao", current.modoExibicao, next.modoExibicao)
+                compareAndLog("brilho", current.brilho, next.brilho)
+                compareAndLog("contraste", current.contraste, next.contraste)
+                compareAndLog("saturacao", current.saturacao, next.saturacao)
+                compareAndLog("zoom", current.zoom, next.zoom)
+                compareAndLog("volume", current.volume, next.volume)
+                compareAndLog("tempo_transicao", current.tempoTransicao, next.tempoTransicao)
+                compareAndLog("playlist", current.clienteId, next.clienteId)
+
                 Log.d("VisionCentral", "[Sync] Alterações detectadas. Salvando no banco local.")
                 dao.saveConfig(next)
+                Log.d("VisionCentral", "Configuração aplicada")
             } else {
                 Log.d("VisionCentral", "[Sync] Nenhuma alteração detectada nas configurações.")
             }
 
-            // 4. Sync Playlist if we have a client ID
+            // 3. Sync Playlist if we have a client ID
             next.clienteId?.let { 
                 syncPlaylistInternal(it, tv) 
             } ?: run {
@@ -263,6 +300,15 @@ class VisionRepository(context: Context) {
         } catch (e: Exception) {
             Log.e("VisionCentral", "[Sync] Erro crítico na sincronização", e)
             return false
+        }
+    }
+
+    private fun compareAndLog(field: String, old: Any?, new: Any?) {
+        if (old != new) {
+            Log.d("VisionCentral", "Campo: $field")
+            Log.d("VisionCentral", "Valor antigo: $old")
+            Log.d("VisionCentral", "Valor novo: $new")
+            Log.d("VisionCentral", "↓")
         }
     }
 
@@ -377,9 +423,6 @@ class VisionRepository(context: Context) {
         try {
             val config = dao.getConfig() ?: return
             val tvId = config.tvId ?: return
-            val token = config.token ?: "N/A"
-            
-            Log.d("VisionCentral", "[Heartbeat] [$now] Preparando heartbeat para TV ID: $tvId (Token: $token)")
             
             // Use ISO 8601 UTC timestamp
             val timestamp = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -392,28 +435,18 @@ class VisionRepository(context: Context) {
                 }
             }
             
-            val update = mutableMapOf<String, String>(
-                "status" to "Online",
-                "ultima_conexao" to timestamp
+            val update = HeartbeatUpdate(
+                status = "Online",
+                ultimaConexao = timestamp,
+                ultimaSincronizacao = if (isSync) timestamp else null
             )
             
-            if (isSync) {
-                update["ultima_sincronizacao"] = timestamp
-            }
-            
-            Log.d("VisionCentral", "[Heartbeat] [$now] Executando update (Online) no Supabase...")
             SupabaseClient.client.postgrest["tvs"].update(update) {
                 filter { eq("id", tvId) }
             }
-            Log.d("VisionCentral", "[Heartbeat] [$now] Status ONLINE atualizado com sucesso no Supabase.")
         } catch (e: Exception) {
             Log.e("VisionCentral", "[Heartbeat] [$now] Falha ao atualizar heartbeat no Supabase", e)
         }
-    }
-
-    suspend fun setPlaybackMode(active: Boolean) {
-        val config = dao.getConfig() ?: return
-        dao.saveConfig(config.copy(autoplay = active))
     }
 
     suspend fun getLocalPlaylist(): LocalPlaylist? = dao.getPlaylist()
