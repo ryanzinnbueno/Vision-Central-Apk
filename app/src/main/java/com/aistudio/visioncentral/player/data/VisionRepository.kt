@@ -53,49 +53,60 @@ class VisionRepository(context: Context) {
     fun startRealtimeSync(scope: CoroutineScope) {
         realtimeJob?.cancel()
         realtimeJob = scope.launch {
-            val config = dao.getConfig() ?: return@launch
-            val tvId = config.tvId ?: return@launch
+            val config = dao.getConfig()
+            if (config == null) {
+                Log.e("VisionCentral", "[Realtime Audit] Erro: Configuração local é NULA. Abortando.")
+                return@launch
+            }
             
-            Log.d("VisionCentral", "========== REALTIME INICIADO ==========")
-            Log.d("VisionCentral", "Aguardando alterações para TV: $tvId")
+            val tvId = config.tvId
+            if (tvId == null) {
+                Log.e("VisionCentral", "[Realtime Audit] Erro: tvId é NULO. Abortando.")
+                return@launch
+            }
+            
+            Log.d("VisionCentral", "========== REALTIME AUDIT INICIADO ==========")
+            Log.d("VisionCentral", "[Realtime Audit] TV ID Alvo: $tvId")
             
             try {
                 // Monitoramento de Status da Conexão
                 SupabaseClient.client.realtime.status.onEach { status ->
+                    Log.d("VisionCentral", "[Realtime Audit] WebSocket Status Changed: $status")
                     when (status) {
-                        Realtime.Status.CONNECTED -> Log.d("VisionCentral", "WebSocket conectado")
-                        Realtime.Status.DISCONNECTED -> Log.d("VisionCentral", "Realtime desconectado")
-                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "Reconectando...")
-                        else -> Log.d("VisionCentral", "Status Realtime: $status")
+                        Realtime.Status.CONNECTED -> Log.i("VisionCentral", "[Realtime Audit] WebSocket CONECTADO com sucesso")
+                        Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[Realtime Audit] WebSocket DESCONECTADO")
+                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "[Realtime Audit] WebSocket CONECTANDO...")
+                        else -> Log.d("VisionCentral", "[Realtime Audit] Status Realtime: $status")
                     }
                 }.launchIn(this)
 
+                Log.d("VisionCentral", "[Realtime Audit] Solicitando realtime.connect()...")
                 SupabaseClient.client.realtime.connect()
-                Log.d("VisionCentral", "Realtime conectado")
 
+                Log.d("VisionCentral", "[Realtime Audit] Criando canal 'tvs_changes'...")
                 val channel = SupabaseClient.client.realtime.channel("tvs_changes")
-                Log.d("VisionCentral", "Canal criado")
                 
                 channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
                     table = "tvs"
                 }.onEach { action ->
                     val recordId = action.record["id"]?.jsonPrimitive?.contentOrNull
+                    Log.d("VisionCentral", "[Realtime Audit] EVENTO RECEBIDO: Postgres UPDATE na tabela 'tvs'")
+                    Log.d("VisionCentral", "[Realtime Audit] ID no registro alterado: $recordId")
                     
                     if (recordId == tvId) {
-                        Log.d("VisionCentral", "Evento recebido: Realtime UPDATE")
-                        Log.d("VisionCentral", "TV alterada: $recordId")
-                        Log.d("VisionCentral", "Sincronizando...")
+                        Log.i("VisionCentral", "[Realtime Audit] MATCH! Alteração é para esta TV. Sincronizando configurações...")
                         syncTvSettings()
+                    } else {
+                        Log.d("VisionCentral", "[Realtime Audit] IGNORED: Alteração para outra TV ($recordId)")
                     }
                 }.launchIn(this)
                 
+                Log.d("VisionCentral", "[Realtime Audit] Solicitando channel.subscribe()...")
                 channel.subscribe()
-                Log.d("VisionCentral", "Canal inscrito")
-                Log.d("VisionCentral", "Realtime ativo")
-                Log.d("VisionCentral", "Aguardando alterações...")
+                Log.d("VisionCentral", "[Realtime Audit] channel.subscribe() chamado. Aguardando alterações...")
 
             } catch (e: Exception) {
-                Log.e("VisionCentral", "Erro ao iniciar Realtime", e)
+                Log.e("VisionCentral", "[Realtime Audit] EXCEÇÃO CRÍTICA ao iniciar Realtime", e)
             }
         }
     }
