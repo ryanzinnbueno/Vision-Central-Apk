@@ -18,6 +18,7 @@ data class LocalMediaItem(
     val nome: String,
     val tipo: String,
     val url: String,
+    val origem: String = "storage",
     val localPath: String? = null,
     val duracao: Int,
     val ordem: Int
@@ -38,7 +39,14 @@ data class DeviceConfig(
     val rotacao: String = "0",
     val proporcao: String = "16:9",
     val resolucao: String = "1080p",
-    val ajusteTela: String = "Cover"
+    val ajusteTela: String = "Cover",
+    val modoExibicao: String = "CenterInside",
+    val brilho: Int = 100,
+    val contraste: Int = 100,
+    val saturacao: Int = 100,
+    val zoom: Int = 100,
+    val volume: Int = 100,
+    val tempoTransicao: Int = 500
 )
 
 @Entity(tableName = "downloaded_media")

@@ -21,6 +21,13 @@ data class Tv(
     @SerialName("proporcao") val proporcao: String? = "16:9",
     @SerialName("resolucao") val resolucao: String? = "1080p",
     @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
+    @SerialName("modo_exibicao") val modoExibicao: String? = "CenterInside",
+    @SerialName("brilho") val brilho: Int? = 100,
+    @SerialName("contraste") val contraste: Int? = 100,
+    @SerialName("saturacao") val saturacao: Int? = 100,
+    @SerialName("zoom") val zoom: Int? = 100,
+    @SerialName("volume") val volume: Int? = 100,
+    @SerialName("tempo_transicao") val tempoTransicao: Int? = 500,
     @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
 )
 
@@ -33,6 +40,13 @@ data class TvConfig(
     @SerialName("proporcao") val proporcao: String? = "16:9",
     @SerialName("resolucao") val resolucao: String? = "1080p",
     @SerialName("ajuste_tela") val ajusteTela: String? = "Cover",
+    @SerialName("modo_exibicao") val modoExibicao: String? = "CenterInside",
+    @SerialName("brilho") val brilho: Int? = 100,
+    @SerialName("contraste") val contraste: Int? = 100,
+    @SerialName("saturacao") val saturacao: Int? = 100,
+    @SerialName("zoom") val zoom: Int? = 100,
+    @SerialName("volume") val volume: Int? = 100,
+    @SerialName("tempo_transicao") val tempoTransicao: Int? = 500,
     @SerialName("modo_reproducao") val modoReproducao: Boolean? = true
 )
 
@@ -57,7 +71,9 @@ data class Midia(
     @SerialName("id") val id: String,
     @SerialName("nome") val nome: String,
     @SerialName("tipo") val tipo: String, // 'image' or 'video'
-    @SerialName("url_storage") val urlStorage: String,
+    @SerialName("url_storage") val urlStorage: String? = null,
+    @SerialName("origem") val origem: String? = "storage",
+    @SerialName("url_externa") val urlExterna: String? = null,
     @SerialName("duracao") val duracao: Int = 10,
     @SerialName("tamanho") val tamanho: String? = null
 )

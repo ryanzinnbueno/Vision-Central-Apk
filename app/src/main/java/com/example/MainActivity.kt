@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.ui.theme.MyApplicationTheme
 
+import android.util.Log
 import android.view.WindowManager
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.screens.*
@@ -28,6 +29,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    Log.d("VisionCentral", "Aplicativo iniciando - MainActivity.onCreate")
     
     // Hide system bars and keep screen on
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -58,13 +60,23 @@ class MainActivity : ComponentActivity() {
           // Handle Orientation
           LaunchedEffect(config?.orientacao) {
               config?.let {
-                  val targetOrientation = if (it.orientacao == "Vertical") {
-                      android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                  } else {
-                      android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                  val orientacaoStr = it.orientacao ?: "Horizontal"
+                  Log.d("VisionCentral", "Aplicando orientação: $orientacaoStr")
+                  
+                  val targetOrientation = when (orientacaoStr.lowercase()) {
+                      "vertical", "portrait" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                      "horizontal", "landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                      "reverse_vertical", "reverse_portrait" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                      "reverse_horizontal", "reverse_landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                      "sensor" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                      else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                   }
+                  
                   if (requestedOrientation != targetOrientation) {
+                      Log.d("VisionCentral", "Mudando requestedOrientation para: $targetOrientation")
                       requestedOrientation = targetOrientation
+                  } else {
+                      Log.d("VisionCentral", "Orientação já está correta: $targetOrientation")
                   }
               }
           }

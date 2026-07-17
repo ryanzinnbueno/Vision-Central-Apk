@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.VisionRepository
@@ -75,9 +76,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun activate(token: String) {
         viewModelScope.launch {
+            // Small delay to allow keyboard animation to finish if hidden in the UI
+            delay(500)
             _uiState.value = UiState.Syncing("Validando token...")
-            // Small delay to allow keyboard animation to finish if hidden
-            delay(300)
             val newConfig = repository.validateToken(token)
             if (newConfig?.isLinked == true) {
                 startSync(newConfig.clienteId!!)
@@ -146,10 +147,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 
                 // Polling Sync & Heartbeat every 10 seconds
-                if (config.clienteId != null) {
-                    _isSyncing.value = true
-                    try {
-                        val newPlaylist = repository.syncPlaylist(config.clienteId)
+                Log.d("VisionCentral", "Ciclo de sincronização em segundo plano iniciado...")
+                _isSyncing.value = true
+                try {
+                    Log.d("VisionCentral", "Chamando repository.syncTvSettings()...")
+                    // This fetches all TV settings and updates local config
+                    repository.syncTvSettings()
+                    
+                    val currentConfig = repository.getOrCreateConfig()
+                    if (currentConfig.clienteId != null) {
+                        val newPlaylist = repository.getPlaylist()
                         if (newPlaylist != null) {
                             val newItems = repository.parseItems(newPlaylist.itemsJson)
                             val currentState = _uiState.value
@@ -159,7 +166,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                 if (newItems != currentState.items || newPlaylist.id != currentState.playlist.id) {
                                     _uiState.value = UiState.Playing(newPlaylist, newItems)
                                 }
-                            } else if (currentState is UiState.Stopped && config.modoReproducaoAtivo) {
+                            } else if (currentState is UiState.Stopped && currentConfig.modoReproducaoAtivo) {
                                 if (newItems.isNotEmpty()) {
                                     _uiState.value = UiState.Playing(newPlaylist, newItems)
                                 }
@@ -169,13 +176,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                 }
                             }
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        _isSyncing.value = false
+                    } else {
+                        repository.updateHeartbeat(isSync = false)
                     }
-                } else {
-                    repository.updateHeartbeat(isSync = false)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    _isSyncing.value = false
                 }
                 
                 delay(10000)

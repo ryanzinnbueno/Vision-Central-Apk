@@ -1,6 +1,7 @@
 package com.example.data
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import com.example.data.local.DeviceConfig
 import com.example.data.local.LocalMediaItem
@@ -39,13 +40,19 @@ class VisionRepository(context: Context) {
 
     suspend fun getOrCreateConfig(): DeviceConfig {
         val existing = dao.getConfig()
-        if (existing != null) return existing
+        if (existing != null) {
+            Log.d("VisionCentral", "Token carregado do banco local: ${existing.token}")
+            return existing
+        }
 
+        Log.d("VisionCentral", "Nenhuma configuração encontrada. Criando novo deviceId.")
         val deviceId = UUID.randomUUID().toString()
         val config = DeviceConfig(deviceId = deviceId)
         dao.saveConfig(config)
         return config
     }
+
+    suspend fun getPlaylist(): LocalPlaylist? = dao.getPlaylist()
 
     fun normalizeToken(raw: String): String {
         return raw.trim().uppercase().replace(Regex("[^A-Z0-9]"), "")
@@ -53,9 +60,10 @@ class VisionRepository(context: Context) {
 
     suspend fun validateToken(rawToken: String): DeviceConfig? {
         val normalized = normalizeToken(rawToken)
+        Log.d("VisionCentral", "Validando token: $rawToken (Normalizado: $normalized)")
         try {
             // 1. Search directly in Supabase for the TV with this token
-            // We use Case-Insensitive search if possible, or just exact match on normalized
+            Log.d("VisionCentral", "Consultando Supabase para o token: $rawToken")
             val matchedTv = SupabaseClient.client.postgrest["tvs"]
                 .select {
                     filter {
@@ -81,6 +89,13 @@ class VisionRepository(context: Context) {
                     proporcao = matchedTv.proporcao ?: "16:9",
                     resolucao = matchedTv.resolucao ?: "1080p",
                     ajusteTela = matchedTv.ajusteTela ?: "Cover",
+                    modoExibicao = matchedTv.modoExibicao ?: "CenterInside",
+                    brilho = matchedTv.brilho ?: 100,
+                    contraste = matchedTv.contraste ?: 100,
+                    saturacao = matchedTv.saturacao ?: 100,
+                    zoom = matchedTv.zoom ?: 100,
+                    volume = matchedTv.volume ?: 100,
+                    tempoTransicao = matchedTv.tempoTransicao ?: 500,
                     modoReproducaoAtivo = matchedTv.modoReproducao ?: true
                 )
                 dao.saveConfig(newConfig)
@@ -118,82 +133,142 @@ class VisionRepository(context: Context) {
         }
     }
 
-    suspend fun syncPlaylist(clienteId: String): LocalPlaylist? {
+    suspend fun syncTvSettings(): Boolean {
         try {
-            val config = dao.getConfig()!!
-            val tvId = config.tvId ?: return null
-            
+            val config = dao.getConfig() ?: run {
+                Log.d("VisionCentral", "syncTvSettings interrompido: Config não encontrada no DAO")
+                return false
+            }
+            val token = config.token ?: run {
+                Log.d("VisionCentral", "syncTvSettings interrompido: Token não encontrado na configuração")
+                return false
+            }
+
+            Log.d("VisionCentral", "Iniciando syncTvSettings() para o token: $token")
+
+            // 1. Fetch TV by token (Always the source of truth)
+            Log.d("VisionCentral", "Consultando Supabase (tabela tvs) pelo token: $token")
             val tv = SupabaseClient.client.postgrest["tvs"]
-                .select { filter { eq("id", tvId) } }
+                .select { filter { eq("token", token) } }
                 .decodeSingleOrNull<Tv>()
 
-            val cliente = SupabaseClient.client.postgrest["clientes"]
-                .select { filter { eq("id", clienteId) } }
-                .decodeSingleOrNull<com.example.data.model.Cliente>()
+            if (tv == null) {
+                Log.d("VisionCentral", "Sync falhou: TV não encontrada no Supabase para o token: $token")
+                return false
+            }
 
-            val playlistId = tv?.playlistId ?: cliente?.playlistId ?: return null
-            
-            // Fetch separate config if exists (tabela configuracoes)
+            Log.d("VisionCentral", "Supabase retornou TV: id=${tv.id}, nome=${tv.nome}")
+            Log.d("VisionCentral", "Propriedades da TV:")
+            Log.d("VisionCentral", "  - orientacao: ${tv.orientacao}")
+            Log.d("VisionCentral", "  - proporcao: ${tv.proporcao}")
+            Log.d("VisionCentral", "  - modo_exibicao: ${tv.modoExibicao}")
+            Log.d("VisionCentral", "  - brilho: ${tv.brilho}")
+            Log.d("VisionCentral", "  - contraste: ${tv.contraste}")
+            Log.d("VisionCentral", "  - saturacao: ${tv.saturacao}")
+            Log.d("VisionCentral", "  - zoom: ${tv.zoom}")
+            Log.d("VisionCentral", "  - volume: ${tv.volume}")
+            Log.d("VisionCentral", "  - tempo_transicao: ${tv.tempoTransicao}")
+            Log.d("VisionCentral", "  - playlist_id: ${tv.playlistId}")
+            Log.d("VisionCentral", "  - cliente_id: ${tv.clienteId}")
+
+            // 2. Fetch separate config if exists (optional table configuracoes)
+            Log.d("VisionCentral", "Consultando Supabase (tabela configuracoes) para tv_id=${tv.id}")
             val tvConfig: TvConfig? = try {
                 SupabaseClient.client.postgrest["configuracoes"]
-                    .select { filter { eq("tv_id", tvId) } }
+                    .select { filter { eq("tv_id", tv.id) } }
                     .decodeSingleOrNull<TvConfig>()
             } catch (e: Exception) {
+                Log.d("VisionCentral", "Sem registros na tabela configuracoes (opcional)")
                 null
             }
 
-            // Update configuration
-            val currentConfig = dao.getConfig()!!
-            var updatedConfig = currentConfig
-            
-            if (tv != null) {
-                if (currentConfig.tvName != tv.nome) {
-                    updatedConfig = updatedConfig.copy(tvName = tv.nome)
-                }
-                // Sync from TV fields if available
-                tv.rotacao?.let { updatedConfig = updatedConfig.copy(rotacao = it) }
-                tv.orientacao?.let { updatedConfig = updatedConfig.copy(orientacao = it) }
-                tv.proporcao?.let { updatedConfig = updatedConfig.copy(proporcao = it) }
-                tv.resolucao?.let { updatedConfig = updatedConfig.copy(resolucao = it) }
-                tv.ajusteTela?.let { updatedConfig = updatedConfig.copy(ajusteTela = it) }
-                tv.modoReproducao?.let { updatedConfig = updatedConfig.copy(modoReproducaoAtivo = it) }
+            if (tvConfig != null) {
+                Log.d("VisionCentral", "Tabela configuracoes retornou valores. Sobrepondo...")
             }
-            
+
+            // 3. Prepare updated configuration
+            val currentConfig = dao.getConfig()!!
+            var updatedConfig = currentConfig.copy(
+                tvId = tv.id,
+                tvName = tv.nome ?: currentConfig.tvName,
+                clienteId = tv.clienteId ?: currentConfig.clienteId,
+                orientacao = tv.orientacao ?: currentConfig.orientacao ?: "Horizontal",
+                rotacao = tv.rotacao ?: currentConfig.rotacao ?: "0",
+                proporcao = tv.proporcao ?: currentConfig.proporcao ?: "16:9",
+                resolucao = tv.resolucao ?: currentConfig.resolucao ?: "1080p",
+                ajusteTela = tv.ajusteTela ?: currentConfig.ajusteTela ?: "Cover",
+                modoExibicao = tv.modoExibicao ?: currentConfig.modoExibicao ?: "CenterInside",
+                brilho = tv.brilho ?: currentConfig.brilho ?: 100,
+                contraste = tv.contraste ?: currentConfig.contraste ?: 100,
+                saturacao = tv.saturacao ?: currentConfig.saturacao ?: 100,
+                zoom = tv.zoom ?: currentConfig.zoom ?: 100,
+                volume = tv.volume ?: currentConfig.volume ?: 100,
+                tempoTransicao = tv.tempoTransicao ?: currentConfig.tempoTransicao ?: 500,
+                modoReproducaoAtivo = tv.modoReproducao ?: currentConfig.modoReproducaoAtivo ?: true
+            )
+
             // Override with separate config if available
             tvConfig?.let { cfg ->
+                println("VisionCentral: Aplicando sobreposição da tabela configuracoes para tvId=${tv.id}")
                 updatedConfig = updatedConfig.copy(
                     rotacao = cfg.rotacao ?: updatedConfig.rotacao,
                     orientacao = cfg.orientacao ?: updatedConfig.orientacao,
                     proporcao = cfg.proporcao ?: updatedConfig.proporcao,
                     resolucao = cfg.resolucao ?: updatedConfig.resolucao,
                     ajusteTela = cfg.ajusteTela ?: updatedConfig.ajusteTela,
+                    modoExibicao = cfg.modoExibicao ?: updatedConfig.modoExibicao,
+                    brilho = cfg.brilho ?: updatedConfig.brilho,
+                    contraste = cfg.contraste ?: updatedConfig.contraste,
+                    saturacao = cfg.saturacao ?: updatedConfig.saturacao,
+                    zoom = cfg.zoom ?: updatedConfig.zoom,
+                    volume = cfg.volume ?: updatedConfig.volume,
+                    tempoTransicao = cfg.tempoTransicao ?: updatedConfig.tempoTransicao,
                     modoReproducaoAtivo = cfg.modoReproducao ?: updatedConfig.modoReproducaoAtivo
                 )
             }
-            
-            cliente?.let {
-                if (updatedConfig.orientacao != it.orientation) {
-                    updatedConfig = updatedConfig.copy(orientacao = it.orientation)
-                }
-            }
-            
+
+            // Save if changed
             if (updatedConfig != currentConfig) {
+                Log.d("VisionCentral", "Novas configurações detectadas. Salvando localmente.")
                 dao.saveConfig(updatedConfig)
+            } else {
+                Log.d("VisionCentral", "Configurações sem alterações.")
             }
 
-            // 2. Get Playlist details
+            // 4. Sync Playlist if we have a client ID
+            updatedConfig.clienteId?.let { 
+                syncPlaylistInternal(it, tv) 
+            }
+
+            return true
+        } catch (e: Exception) {
+            println("VisionCentral: Erro na sincronização: ${e.message}")
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    private suspend fun syncPlaylistInternal(clienteId: String, tv: Tv): LocalPlaylist? {
+        try {
+            val cliente = SupabaseClient.client.postgrest["clientes"]
+                .select { filter { eq("id", clienteId) } }
+                .decodeSingleOrNull<com.example.data.model.Cliente>()
+
+            val playlistId = tv.playlistId ?: cliente?.playlistId ?: return null
+
+            // Get Playlist details
             val playlist = SupabaseClient.client.postgrest["playlists"]
                 .select { filter { eq("id", playlistId) } }
                 .decodeSingleOrNull<Playlist>() ?: return null
 
-            // 3. Get Media relations
+            // Get Playlist Media relations
             val relations = SupabaseClient.client.postgrest["playlist_midias"]
                 .select {
                     filter { eq("playlist_id", playlistId) }
                     order("ordem", Order.ASCENDING)
                 }.decodeList<PlaylistMidia>()
 
-            // 4. Get Media details
+            // Get Media details
             val mediaIds = relations.map { it.midiaId }.distinct()
             val allMedia = SupabaseClient.client.postgrest["midias"]
                 .select {
@@ -202,15 +277,37 @@ class VisionRepository(context: Context) {
                     }
                 }.decodeList<Midia>()
 
-            // 5. Map to LocalMediaItem
+            // Map to LocalMediaItem
             val items = relations.mapNotNull { rel ->
-                val media = allMedia.find { it.id == rel.midiaId } ?: return@mapNotNull null
+                val media = allMedia.find { it.id == rel.midiaId } ?: run {
+                    Log.w("VisionCentral", "Mídia ID ${rel.midiaId} não encontrada na tabela de mídias.")
+                    return@mapNotNull null
+                }
+
+                val mediaUrl = when (media.origem?.lowercase()) {
+                    "url" -> {
+                        Log.d("VisionCentral", "Mapeando mídia URL: id=${media.id}, nome=${media.nome}, url_externa=${media.urlExterna}")
+                        media.urlExterna
+                    }
+                    else -> {
+                        Log.d("VisionCentral", "Mapeando mídia Storage: id=${media.id}, nome=${media.nome}, url_storage=${media.urlStorage}")
+                        media.urlStorage
+                    }
+                }
+
+                if (mediaUrl.isNullOrEmpty()) {
+                    Log.w("VisionCentral", "Mídia ${media.nome} (ID: ${media.id}) ignorada: URL de origem (${media.origem}) está vazia.")
+                    return@mapNotNull null
+                }
+
                 val downloaded = dao.getDownloadedMedia(media.id)
+                Log.d("VisionCentral", "Dados brutos da mídia (Supabase): id=${media.id}, tipo=${media.tipo}, origem=${media.origem}, url_storage=${media.urlStorage}, url_externa=${media.urlExterna}")
                 LocalMediaItem(
                     id = media.id,
                     nome = media.nome,
                     tipo = media.tipo,
-                    url = media.urlStorage,
+                    url = mediaUrl,
+                    origem = media.origem ?: "storage",
                     localPath = if (downloaded != null && java.io.File(downloaded.localPath).exists()) downloaded.localPath else null,
                     duracao = rel.duracao,
                     ordem = rel.ordem
@@ -223,12 +320,11 @@ class VisionRepository(context: Context) {
                 itemsJson = json.encodeToString(items)
             )
             
-            // Check if playlist actually changed before saving/triggering downloads
             val existingPlaylist = dao.getPlaylist()
             if (existingPlaylist?.itemsJson != localPlaylist.itemsJson || existingPlaylist?.id != localPlaylist.id) {
+                println("VisionCentral: Playlist alterada. Atualizando.")
                 dao.savePlaylist(localPlaylist)
                 
-                // Trigger background downloads
                 CoroutineScope(Dispatchers.IO).launch {
                     items.forEach { item ->
                         val expectedSize = allMedia.find { it.id == item.id }?.tamanho?.toLongOrNull()
@@ -240,13 +336,17 @@ class VisionRepository(context: Context) {
             }
 
             updateHeartbeat(isSync = true)
-
             return localPlaylist
 
         } catch (e: Exception) {
             e.printStackTrace()
-            return dao.getPlaylist()
+            return null
         }
+    }
+
+    suspend fun syncPlaylist(clienteId: String): LocalPlaylist? {
+        syncTvSettings()
+        return dao.getPlaylist()
     }
 
     suspend fun updateHeartbeat(isSync: Boolean = false) {
