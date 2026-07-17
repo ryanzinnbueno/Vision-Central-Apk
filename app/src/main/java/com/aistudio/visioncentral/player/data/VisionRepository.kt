@@ -69,41 +69,40 @@ class VisionRepository(context: Context) {
             Log.d("VisionCentral", "[Realtime Audit] TV ID Alvo: $tvId")
             
             try {
-                // Monitoramento de Status da Conexão
+                // 1. Monitoramento de Status da Conexão e Canal
                 SupabaseClient.client.realtime.status.onEach { status ->
-                    Log.d("VisionCentral", "[Realtime Audit] WebSocket Status Changed: $status")
+                    Log.d("VisionCentral", "[Realtime Audit] WebSocket Status: $status")
                     when (status) {
-                        Realtime.Status.CONNECTED -> Log.i("VisionCentral", "[Realtime Audit] WebSocket CONECTADO com sucesso")
+                        Realtime.Status.CONNECTED -> Log.i("VisionCentral", "[Realtime Audit] WebSocket CONECTADO")
                         Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[Realtime Audit] WebSocket DESCONECTADO")
-                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "[Realtime Audit] WebSocket CONECTANDO...")
-                        else -> Log.d("VisionCentral", "[Realtime Audit] Status Realtime: $status")
+                        else -> {}
                     }
                 }.launchIn(this)
 
-                Log.d("VisionCentral", "[Realtime Audit] Solicitando realtime.connect()...")
                 SupabaseClient.client.realtime.connect()
 
-                Log.d("VisionCentral", "[Realtime Audit] Criando canal 'tvs_changes'...")
                 val channel = SupabaseClient.client.realtime.channel("tvs_changes")
+                Log.d("VisionCentral", "[Realtime Audit] Canal 'tvs_changes' criado")
                 
                 channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
                     table = "tvs"
                 }.onEach { action ->
-                    val recordId = action.record["id"]?.jsonPrimitive?.contentOrNull
-                    Log.d("VisionCentral", "[Realtime Audit] EVENTO RECEBIDO: Postgres UPDATE na tabela 'tvs'")
-                    Log.d("VisionCentral", "[Realtime Audit] ID no registro alterado: $recordId")
+                    val record = action.record
+                    val recordId = record["id"]?.jsonPrimitive?.contentOrNull
+                    
+                    Log.d("VisionCentral", "[Realtime Audit] EVENTO RECEBIDO: Postgres UPDATE")
+                    Log.d("VisionCentral", "[Realtime Audit] Dados recebidos: $record")
                     
                     if (recordId == tvId) {
-                        Log.i("VisionCentral", "[Realtime Audit] MATCH! Alteração é para esta TV. Sincronizando configurações...")
+                        Log.i("VisionCentral", "[Realtime Audit] MATCH! ID $recordId corresponde a esta TV. Disparando sync...")
                         syncTvSettings()
                     } else {
-                        Log.d("VisionCentral", "[Realtime Audit] IGNORED: Alteração para outra TV ($recordId)")
+                        Log.d("VisionCentral", "[Realtime Audit] IGNORE: Update para TV $recordId")
                     }
                 }.launchIn(this)
                 
-                Log.d("VisionCentral", "[Realtime Audit] Solicitando channel.subscribe()...")
                 channel.subscribe()
-                Log.d("VisionCentral", "[Realtime Audit] channel.subscribe() chamado. Aguardando alterações...")
+                Log.d("VisionCentral", "[Realtime Audit] channel.subscribe() disparado. Aguardando eventos...")
 
             } catch (e: Exception) {
                 Log.e("VisionCentral", "[Realtime Audit] EXCEÇÃO CRÍTICA ao iniciar Realtime", e)
@@ -278,7 +277,7 @@ class VisionRepository(context: Context) {
 
             // Logging changes
             if (next != current) {
-                Log.d("VisionCentral", "Sincronizando...")
+                Log.d("VisionCentral", "[Realtime Audit] Mudanças detectadas. Persistindo no Room...")
                 
                 compareAndLog("nome", current.tvName, next.tvName)
                 compareAndLog("orientacao", current.orientacao, next.orientacao)

@@ -39,7 +39,8 @@ import android.webkit.WebViewClient
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: Boolean = false) {
-    Log.d("VisionCentral", "[CONFIG APLICADA NA UI]")
+    Log.d("VisionCentral", "========== [Realtime Audit] UI REAGIU ==========")
+    Log.d("VisionCentral", "[Realtime Audit] Configuração aplicada na UI:")
     Log.d("VisionCentral", "  - Orientacao: ${config?.orientacao}")
     Log.d("VisionCentral", "  - Rotacao: ${config?.rotacao}")
     Log.d("VisionCentral", "  - Proporcao: ${config?.proporcao}")
