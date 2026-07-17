@@ -1,4 +1,4 @@
-package com.example
+package com.aistudio.visioncentral.player
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,14 +13,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 import androidx.compose.ui.tooling.preview.Preview
-import com.example.ui.theme.MyApplicationTheme
+import com.aistudio.visioncentral.player.ui.theme.MyApplicationTheme
 
 import android.util.Log
 import android.view.WindowManager
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ui.screens.*
-import com.example.ui.viewmodel.PlayerViewModel
-import com.example.ui.viewmodel.UiState
+import com.aistudio.visioncentral.player.ui.screens.*
+import com.aistudio.visioncentral.player.ui.viewmodel.PlayerViewModel
+import com.aistudio.visioncentral.player.ui.viewmodel.UiState
 
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat

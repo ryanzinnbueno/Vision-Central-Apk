@@ -1,9 +1,10 @@
-package com.example.data.download
+package com.aistudio.visioncentral.player.data.download
 
 import android.content.Context
 import android.os.StatFs
-import com.example.data.local.DownloadedMedia
-import com.example.data.local.VisionDao
+import android.util.Log
+import com.aistudio.visioncentral.player.data.local.DownloadedMedia
+import com.aistudio.visioncentral.player.data.local.VisionDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,12 +32,16 @@ class MediaDownloadManager(
 
     private val mediaDir: File by lazy {
         File(context.getExternalFilesDir(null), "media").apply {
-            if (!exists()) mkdirs()
+            if (!exists()) {
+                Log.d("VisionCentral", "Criando diretório de mídia: $absolutePath")
+                mkdirs()
+            }
         }
     }
 
     suspend fun downloadMedia(id: String, url: String, expectedHash: String? = null, expectedSize: Long? = null) {
         withContext(Dispatchers.IO) {
+            Log.d("VisionCentral", "Iniciando downloadMedia para ID: $id, URL: $url")
             val existing = dao.getDownloadedMedia(id)
             val file = File(mediaDir, id + getExtension(url))
 
@@ -44,13 +49,16 @@ class MediaDownloadManager(
                 val sizeMatch = expectedSize == null || existing.size == expectedSize
                 val hashMatch = expectedHash == null || existing.hash == expectedHash
                 if (sizeMatch && hashMatch) {
+                    Log.d("VisionCentral", "Mídia já baixada e válida: $id")
                     return@withContext
                 }
+                Log.d("VisionCentral", "Mídia existente inválida (tamanho ou hash divergente). Baixando novamente.")
             }
 
             // Verifica espaço (50MB de folga mínima + tamanho aproximado se disponível)
             val spaceNeeded = expectedSize ?: (50 * 1024 * 1024)
             if (!hasSpace(spaceNeeded)) { 
+                Log.e("VisionCentral", "Espaço insuficiente no dispositivo para o download: $id")
                 _storageError.value = "Espaço insuficiente para download."
                 return@withContext
             } else {
@@ -59,15 +67,20 @@ class MediaDownloadManager(
 
             _isDownloading.value = true
             try {
+                Log.d("VisionCentral", "Baixando $id de $url...")
                 val request = Request.Builder().url(url).build()
                 val response = okHttpClient.newCall(request).execute()
 
-                if (!response.isSuccessful) throw Exception("Erro no download: ${response.code}")
+                if (!response.isSuccessful) {
+                    Log.e("VisionCentral", "Erro no download de $id: Código ${response.code}")
+                    throw Exception("Erro no download: ${response.code}")
+                }
 
                 val body = response.body ?: throw Exception("Corpo da resposta vazio")
                 val totalBytes = body.contentLength()
                 
                 if (totalBytes > 0 && !hasSpace(totalBytes + 10 * 1024 * 1024)) {
+                    Log.e("VisionCentral", "Armazenamento ficaria muito cheio após o download de $id")
                     _storageError.value = "Armazenamento cheio."
                     return@withContext
                 }
@@ -106,8 +119,9 @@ class MediaDownloadManager(
                         hash = hash
                     )
                 )
+                Log.d("VisionCentral", "Download concluído e salvo: $id (Tamanho: $totalRead)")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("VisionCentral", "Erro no processamento do download: $id", e)
             } finally {
                 _downloadProgress.value = _downloadProgress.value - id
                 if (_downloadProgress.value.isEmpty()) {
@@ -156,9 +170,11 @@ class MediaDownloadManager(
 
     suspend fun cleanupUnusedMedia(usedIds: Set<String>) {
         withContext(Dispatchers.IO) {
+            Log.d("VisionCentral", "Iniciando limpeza de mídias não utilizadas. IDs em uso: $usedIds")
             val allMedia = dao.getAllDownloadedMedia()
             allMedia.forEach { media ->
                 if (!usedIds.contains(media.id)) {
+                    Log.d("VisionCentral", "Removendo mídia não utilizada: ${media.id} (${media.localPath})")
                     val file = File(media.localPath)
                     if (file.exists()) file.delete()
                     dao.deleteDownloadedMedia(media.id)

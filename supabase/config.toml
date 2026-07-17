@@ -1,0 +1,15 @@
+[project]
+id = "vision-central"
+
+[api]
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+
+[db]
+port = 54322
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true

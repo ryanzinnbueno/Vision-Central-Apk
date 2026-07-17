@@ -11,7 +11,7 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.aistudio.visioncentral.player"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {

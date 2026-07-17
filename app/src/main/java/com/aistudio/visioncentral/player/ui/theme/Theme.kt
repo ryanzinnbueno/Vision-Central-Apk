@@ -1,4 +1,4 @@
-package com.example.ui.theme
+package com.aistudio.visioncentral.player.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme

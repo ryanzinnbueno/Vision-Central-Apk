@@ -1,4 +1,4 @@
-package com.example.ui.screens
+package com.aistudio.visioncentral.player.ui.screens
 
 import android.Manifest
 import android.content.Context

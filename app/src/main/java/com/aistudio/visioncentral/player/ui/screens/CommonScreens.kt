@@ -1,4 +1,4 @@
-package com.example.ui.screens
+package com.aistudio.visioncentral.player.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -29,7 +29,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.delay
-import com.example.R
+import com.aistudio.visioncentral.player.R
 
 @Composable
 fun SplashScreen() {
@@ -301,7 +301,7 @@ fun WatermarkLogo(
 
 @Composable
 fun TechnicalPanelDialog(
-    config: com.example.data.local.DeviceConfig,
+    config: com.aistudio.visioncentral.player.data.local.DeviceConfig,
     isDownloading: Boolean,
     downloadProgress: Map<String, Float>,
     storageError: String?,

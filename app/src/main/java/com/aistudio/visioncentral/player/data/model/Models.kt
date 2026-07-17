@@ -1,4 +1,4 @@
-package com.example.data.model
+package com.aistudio.visioncentral.player.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

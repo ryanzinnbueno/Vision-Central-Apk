@@ -1,4 +1,4 @@
-package com.example.ui.screens
+package com.aistudio.visioncentral.player.ui.screens
 
 import android.net.Uri
 import android.util.Log
@@ -19,12 +19,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
-import com.example.data.local.LocalMediaItem
+import com.aistudio.visioncentral.player.data.local.LocalMediaItem
 import kotlinx.coroutines.delay
 
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.aspectRatio
-import com.example.data.local.DeviceConfig
+import com.aistudio.visioncentral.player.data.local.DeviceConfig
 
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
@@ -36,6 +36,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: Boolean = false) {
     Log.d("VisionCentral", "PlayerScreen recompondo - Propriedades aplicadas:")
@@ -151,8 +152,9 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
             when {
                 item.origem == "url" -> {
                     Log.d("VisionCentral", "Renderer selecionado: WebPlayer (WebView)")
+                    // Para origem URL, SEMPRE usar a URL original (item.url), ignorando qualquer path local
                     WebPlayer(
-                        url = mediaSource ?: "",
+                        url = item.url,
                         duration = item.duracao,
                         isPaused = isPaused,
                         onFinished = {
@@ -251,23 +253,24 @@ fun WebPlayer(
         },
         update = { webView ->
             if (webView.url != url) {
-                Log.d("VisionCentral", "WebPlayer: Chamando webView.loadUrl()")
+                Log.d("VisionCentral", "WebPlayer: Decidindo como carregar conteúdo")
                 Log.d("VisionCentral", "WebPlayer: String enviada: $url")
                 
-                val lowerUrl = url.lowercase()
+                val lowerUrl = url.lowercase().trim()
                 when {
-                    lowerUrl.startsWith("https://") || lowerUrl.startsWith("http://") -> {
-                        Log.d("VisionCentral", "WebPlayer: Detectado protocolo HTTP(S)")
+                    lowerUrl.startsWith("http://") || lowerUrl.startsWith("https://") -> {
+                        Log.d("VisionCentral", "WebPlayer: Chamando webView.loadUrl() com HTTP(S)")
+                        webView.loadUrl(url)
                     }
-                    lowerUrl.contains("<!doctype html>") || lowerUrl.contains("<html") -> {
-                        Log.d("VisionCentral", "WebPlayer: Detectado conteúdo HTML bruto")
+                    lowerUrl.contains("<!doctype html>") || lowerUrl.contains("<html") || lowerUrl.contains("<body") -> {
+                        Log.d("VisionCentral", "WebPlayer: Detectado HTML - Chamando loadDataWithBaseURL()")
+                        webView.loadDataWithBaseURL(null, url, "text/html", "utf-8", null)
                     }
                     else -> {
-                        Log.d("VisionCentral", "WebPlayer: Protocolo ou formato desconhecido")
+                        Log.d("VisionCentral", "WebPlayer: Formato desconhecido - Tentando loadUrl() como fallback")
+                        webView.loadUrl(url)
                     }
                 }
-                
-                webView.loadUrl(url)
             }
         },
         modifier = Modifier.fillMaxSize(),
@@ -276,7 +279,7 @@ fun WebPlayer(
             webView.stopLoading()
             webView.loadUrl("about:blank")
             webView.clearHistory()
-            webView.clearCache(true)
+            // webView.clearCache(true) // Removido para evitar erro de chromium: No such file or directory
             webView.destroy()
         }
     )
