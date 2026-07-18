@@ -11,9 +11,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class HeartbeatManager(private val dao: VisionDao) {
+    private val instanceHash = System.identityHashCode(this)
     private var heartbeatJob: Job? = null
 
+    init {
+        Log.d("VisionCentral", "[AUDIT] HeartbeatManager INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
+    }
+
     fun start(scope: CoroutineScope) {
+        Log.d("VisionCentral", "[AUDIT] HeartbeatManager.start called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (true) {
@@ -28,6 +34,7 @@ class HeartbeatManager(private val dao: VisionDao) {
     }
 
     fun stop() {
+        Log.d("VisionCentral", "[AUDIT] HeartbeatManager.stop called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatJob?.cancel()
         heartbeatJob = null
     }

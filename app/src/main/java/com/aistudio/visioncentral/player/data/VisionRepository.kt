@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class VisionRepository(context: Context) {
+    private val instanceHash = System.identityHashCode(this)
     private val db = Room.databaseBuilder(
         context.applicationContext,
         VisionDatabase::class.java, "vision_central.db"
@@ -57,6 +58,7 @@ class VisionRepository(context: Context) {
     val playlistFlow = dao.getPlaylistFlow()
 
     init {
+        Log.d("VisionCentral", "[AUDIT] VisionRepository INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
         realtimeManager.setListener(object : RealtimeManager.RealtimeListener {
             override fun onUpdateReceived(tvId: String) {
                 Log.d("VisionCentral", "[SYNC-5] Recebi evento do Realtime")
@@ -77,18 +79,22 @@ class VisionRepository(context: Context) {
     }
 
     fun startRealtimeSync(scope: CoroutineScope) {
+        Log.d("VisionCentral", "[AUDIT] VisionRepository.startRealtimeSync called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeManager.start(scope)
     }
 
     fun stopRealtimeSync() {
+        Log.d("VisionCentral", "[AUDIT] VisionRepository.stopRealtimeSync called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeManager.stop()
     }
 
     fun startHeartbeat(scope: CoroutineScope) {
+        Log.d("VisionCentral", "[AUDIT] VisionRepository.startHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.start(scope)
     }
 
     fun stopHeartbeat() {
+        Log.d("VisionCentral", "[AUDIT] VisionRepository.stopHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.stop()
     }
 

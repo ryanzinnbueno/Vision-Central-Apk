@@ -17,7 +17,12 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 class RealtimeManager(private val dao: VisionDao) {
+    private val instanceHash = System.identityHashCode(this)
     private var realtimeJob: Job? = null
+
+    init {
+        Log.d("VisionCentral", "[AUDIT] RealtimeManager INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
+    }
 
     interface RealtimeListener {
         fun onUpdateReceived(tvId: String)
@@ -30,6 +35,7 @@ class RealtimeManager(private val dao: VisionDao) {
     }
 
     fun start(scope: CoroutineScope) {
+        Log.d("VisionCentral", "[AUDIT] RealtimeManager.start called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeJob?.cancel()
         realtimeJob = scope.launch {
             val config = dao.getConfig() ?: run {
@@ -98,6 +104,7 @@ class RealtimeManager(private val dao: VisionDao) {
     }
 
     fun stop() {
+        Log.d("VisionCentral", "[AUDIT] RealtimeManager.stop called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeJob?.cancel()
         realtimeJob = null
         Log.d("VisionCentral", "[Em tempo real] Realtime interrompido")
