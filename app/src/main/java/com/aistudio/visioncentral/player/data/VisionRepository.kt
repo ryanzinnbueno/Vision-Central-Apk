@@ -29,6 +29,7 @@ import com.aistudio.visioncentral.player.data.repository.ConfigRepository
 import com.aistudio.visioncentral.player.data.repository.PlaylistRepository
 import com.aistudio.visioncentral.player.data.sync.RealtimeManager
 import com.aistudio.visioncentral.player.data.sync.HeartbeatManager
+import com.aistudio.visioncentral.player.data.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,6 +51,9 @@ class VisionRepository(context: Context) {
     private val playlistRepository = PlaylistRepository(dao, downloadManager)
     private val realtimeManager = RealtimeManager(dao)
     private val heartbeatManager = HeartbeatManager(dao)
+    private val syncScheduler = SyncScheduler {
+        syncTvSettings()
+    }
 
     val downloadProgress = downloadManager.downloadProgress
     val isDownloading = downloadManager.isDownloading
@@ -91,11 +95,13 @@ class VisionRepository(context: Context) {
     fun startHeartbeat(scope: CoroutineScope) {
         Log.d("VisionCentral", "[AUDIT] VisionRepository.startHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.start(scope)
+        syncScheduler.start(scope)
     }
 
     fun stopHeartbeat() {
         Log.d("VisionCentral", "[AUDIT] VisionRepository.stopHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.stop()
+        syncScheduler.stop()
     }
 
     suspend fun getOrCreateConfig(): DeviceConfig = configRepository.getOrCreateConfig()

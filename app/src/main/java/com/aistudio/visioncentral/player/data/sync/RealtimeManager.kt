@@ -57,7 +57,17 @@ class RealtimeManager(private val dao: VisionDao) {
                             Log.i("VisionCentral", "[SYNC-2] WebSocket conectado")
                             Log.i("VisionCentral", "[Em tempo real] WebSocket conectado")
                         }
-                        Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[Em tempo real] Realtime desconectado")
+                        Realtime.Status.DISCONNECTED -> {
+                            Log.w("VisionCentral", "[Em tempo real] Realtime desconectado. Tentando reconectar...")
+                            CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                                kotlinx.coroutines.delay(5000)
+                                try {
+                                    start(scope)
+                                } catch (e: Exception) {
+                                    Log.e("VisionCentral", "[Em tempo real] Erro ao reconectar", e)
+                                }
+                            }
+                        }
                         Realtime.Status.CONNECTING -> Log.d("VisionCentral", "[Em tempo real] Reconectando")
                         else -> {}
                     }
