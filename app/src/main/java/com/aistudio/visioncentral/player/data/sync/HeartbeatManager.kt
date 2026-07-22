@@ -10,7 +10,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class HeartbeatManager(private val dao: VisionDao) {
+class HeartbeatManager(
+    private val dao: VisionDao,
+    private val onSyncRequested: suspend () -> Unit
+) {
     private val instanceHash = System.identityHashCode(this)
     private var heartbeatJob: Job? = null
 
@@ -28,6 +31,13 @@ class HeartbeatManager(private val dao: VisionDao) {
                 } catch (e: Exception) {
                     Log.e("VisionCentral", "[Batimento cardíaco] Erro no loop", e)
                 }
+                
+                try {
+                    onSyncRequested()
+                } catch (e: Exception) {
+                    Log.e("VisionCentral", "[Batimento cardíaco] Erro ao sincronizar config", e)
+                }
+                
                 delay(30000)
             }
         }

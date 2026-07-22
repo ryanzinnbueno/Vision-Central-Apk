@@ -50,7 +50,9 @@ class VisionRepository(context: Context) {
     private val configRepository = ConfigRepository(dao)
     private val playlistRepository = PlaylistRepository(dao, downloadManager)
     private val realtimeManager = RealtimeManager(dao)
-    private val heartbeatManager = HeartbeatManager(dao)
+    private val heartbeatManager = HeartbeatManager(dao) {
+        syncTvSettings()
+    }
     private val syncScheduler = SyncScheduler {
         syncTvSettings()
     }
