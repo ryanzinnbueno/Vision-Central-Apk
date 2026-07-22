@@ -74,7 +74,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     if (items != currentState.items || playlist.id != currentState.playlist.id) {
                         _uiState.value = UiState.Playing(playlist, items)
                     }
-                } else if (currentState !is UiState.Splash && currentState !is UiState.Activation && currentState !is UiState.Syncing) {
+                } else if (currentState !is UiState.Splash && currentState !is UiState.Activation) {
                     if (items.isNotEmpty()) {
                         _uiState.value = UiState.Playing(playlist, items)
                     }

@@ -33,13 +33,13 @@ class MainActivity : ComponentActivity() {
     
     // Hide system bars and keep screen on
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    WindowCompat.setDecorFitsSystemWindows(window, false)
+    
+    enableEdgeToEdge()
     WindowInsetsControllerCompat(window, window.decorView).let { controller ->
       controller.hide(WindowInsetsCompat.Type.systemBars())
       controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
     
-    enableEdgeToEdge()
     setContent {
       MyApplicationTheme {
         PermissionsWrapper {
