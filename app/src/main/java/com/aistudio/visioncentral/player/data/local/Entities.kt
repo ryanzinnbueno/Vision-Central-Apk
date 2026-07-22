@@ -35,7 +35,7 @@ data class DeviceConfig(
     val tvId: String? = null,
     val tvName: String? = null,
     val orientacao: String = "Horizontal",
-    val rotacao: String = "0",
+    val rotacao: Int = 0,
     val proporcao: String = "16:9",
     val modoExibicao: String = "CenterInside",
     val brilho: Int = 100,

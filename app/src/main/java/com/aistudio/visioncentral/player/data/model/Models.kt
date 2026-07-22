@@ -24,7 +24,7 @@ data class Tv(
     @SerialName("zoom") val zoom: Int? = null,
     @SerialName("volume") val volume: Int? = null,
     @SerialName("tempo_transicao") val tempoTransicao: Int? = null,
-    @SerialName("rotacao") val rotacao: String? = null
+    @SerialName("rotacao") val rotacao: Int? = null
 )
 
 @Serializable

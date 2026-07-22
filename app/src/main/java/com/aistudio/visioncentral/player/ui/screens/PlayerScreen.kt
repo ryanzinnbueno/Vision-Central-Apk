@@ -58,7 +58,7 @@ fun PlayerScreen(items: List<LocalMediaItem>, config: DeviceConfig?, isPaused: B
     var currentIndex by remember(items) { mutableIntStateOf(0) }
     val currentItem = items.getOrNull(currentIndex) ?: return
     
-    val rotation = config?.rotacao?.toFloatOrNull() ?: 0f
+    val rotation = (config?.rotacao ?: 0).toFloat()
     val zoom = (config?.zoom ?: 100) / 100f
     val transitionTime = config?.tempoTransicao ?: 500
     

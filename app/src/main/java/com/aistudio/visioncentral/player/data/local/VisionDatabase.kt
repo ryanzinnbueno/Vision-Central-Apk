@@ -44,7 +44,7 @@ interface VisionDao {
     suspend fun deleteDownloadedMedia(id: String)
 }
 
-@Database(entities = [LocalPlaylist::class, DeviceConfig::class, DownloadedMedia::class], version = 8, exportSchema = false)
+@Database(entities = [LocalPlaylist::class, DeviceConfig::class, DownloadedMedia::class], version = 9, exportSchema = false)
 abstract class VisionDatabase : RoomDatabase() {
     abstract fun dao(): VisionDao
 }

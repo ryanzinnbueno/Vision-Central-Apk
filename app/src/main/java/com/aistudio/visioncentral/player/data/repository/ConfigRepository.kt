@@ -57,7 +57,7 @@ class ConfigRepository(private val dao: VisionDao) {
                     tvName = matchedTv.nome,
                     isLinked = true,
                     orientacao = matchedTv.orientacao ?: "Horizontal",
-                    rotacao = matchedTv.rotacao ?: "0",
+                    rotacao = matchedTv.rotacao ?: 0,
                     proporcao = matchedTv.proporcao ?: "16:9",
                     modoExibicao = matchedTv.modoExibicao ?: "CenterInside",
                     brilho = matchedTv.brilho ?: 100,
