@@ -4,7 +4,6 @@ import android.util.Log
 import com.aistudio.visioncentral.player.BuildConfig
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.Storage
 
 object SupabaseClient {
@@ -21,6 +20,5 @@ object SupabaseClient {
     ) {
         install(Postgrest)
         install(Storage)
-        install(Realtime)
     }
 }

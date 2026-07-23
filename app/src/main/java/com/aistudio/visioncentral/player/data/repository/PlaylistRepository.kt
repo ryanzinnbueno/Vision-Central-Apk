@@ -28,7 +28,6 @@ class PlaylistRepository(
         try {
             Log.d("VisionCentral", "[PLAYLIST] Sincronizando playlist...")
             
-            // Get TV to find linked playlist
             val config = dao.getConfig() ?: return null
             val tvId = config.tvId ?: return null
 
@@ -48,6 +47,11 @@ class PlaylistRepository(
             val playlist = SupabaseClient.client.postgrest["playlists"]
                 .select { filter { eq("id", playlistId) } }
                 .decodeSingleOrNull<Playlist>() ?: return null
+
+            if (config.clienteId == clienteId && config.playlistId == playlistId && config.playlistUpdatedAt == playlist.updatedAt && dao.getPlaylist() != null) {
+                Log.d("VisionCentral", "[PLAYLIST] Nenhuma alteração (cliente_id, playlist_id e updated_at iguais).")
+                return dao.getPlaylist()
+            }
 
             val relations = SupabaseClient.client.postgrest["playlist_midias"]
                 .select {
@@ -88,9 +92,10 @@ class PlaylistRepository(
             )
             
             val existing = dao.getPlaylist()
-            if (existing?.itemsJson != localPlaylist.itemsJson || existing?.id != localPlaylist.id) {
+            if (existing?.itemsJson != localPlaylist.itemsJson || existing?.id != localPlaylist.id || config.playlistUpdatedAt != playlist.updatedAt) {
                 Log.d("VisionCentral", "[PLAYLIST] Alteração detectada. Atualizando dados locais.")
                 dao.savePlaylist(localPlaylist)
+                dao.saveConfig(config.copy(playlistId = playlistId, playlistUpdatedAt = playlist.updatedAt, clienteId = clienteId))
                 
                 CoroutineScope(Dispatchers.IO).launch {
                     Log.d("VisionCentral", "[DOWNLOAD] Verificando mídias para download...")
@@ -104,7 +109,8 @@ class PlaylistRepository(
                     Log.d("VisionCentral", "[DOWNLOAD] Processo de verificação de downloads concluído.")
                 }
             } else {
-                Log.d("VisionCentral", "[PLAYLIST] Nenhuma alteração na playlist.")
+                Log.d("VisionCentral", "[PLAYLIST] Nenhuma alteração na playlist (JSON idêntico).")
+                dao.saveConfig(config.copy(playlistId = playlistId, playlistUpdatedAt = playlist.updatedAt, clienteId = clienteId))
             }
 
             return localPlaylist

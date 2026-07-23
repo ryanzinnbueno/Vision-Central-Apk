@@ -54,7 +54,6 @@ class HeartbeatManager(private val dao: VisionDao) {
                 ultimaSincronizacao = if (isSync) timestamp else null
             )
             
-            Log.d("VisionCentral", "[HEARTBEAT] Enviando heartbeat")
             SupabaseClient.client.postgrest["tvs"].update(update) {
                 filter { eq("id", tvId) }
             }

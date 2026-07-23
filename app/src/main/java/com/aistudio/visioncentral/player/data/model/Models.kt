@@ -15,6 +15,7 @@ data class Tv(
     @SerialName("ultima_sincronizacao") val ultimaSincronizacao: String? = null,
     @SerialName("ultima_conexao") val ultimaConexao: String? = null,
     @SerialName("criado_em") val criadoEm: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("orientacao") val orientacao: String? = null,
     @SerialName("proporcao") val proporcao: String? = null,
     @SerialName("modo_exibicao") val modoExibicao: String? = null,
@@ -32,6 +33,7 @@ data class Cliente(
     @SerialName("id") val id: String,
     @SerialName("nome") val nome: String,
     @SerialName("playlist_id") val playlistId: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("ticker_text") val tickerText: String? = null,
     @SerialName("orientation") val orientation: String = "Horizontal"
 )
@@ -40,6 +42,7 @@ data class Cliente(
 data class Playlist(
     @SerialName("id") val id: String,
     @SerialName("nome") val nome: String,
+    @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("cliente_id") val clienteId: String? = null
 )
 

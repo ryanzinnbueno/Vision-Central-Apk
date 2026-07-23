@@ -99,7 +99,6 @@ dependencies {
   implementation(libs.androidx.media3.ui)
   implementation(libs.supabase.postgrest)
   implementation(libs.supabase.storage)
-  implementation(libs.supabase.realtime)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.ktor.client.android)
   implementation(libs.ktor.client.core)

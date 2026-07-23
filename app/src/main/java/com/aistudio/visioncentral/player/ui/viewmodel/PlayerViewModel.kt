@@ -8,10 +8,6 @@ import com.aistudio.visioncentral.player.data.VisionRepository
 import com.aistudio.visioncentral.player.data.local.DeviceConfig
 import com.aistudio.visioncentral.player.data.local.LocalMediaItem
 import com.aistudio.visioncentral.player.data.local.LocalPlaylist
-import com.aistudio.visioncentral.player.data.remote.SupabaseClient
-import io.github.jan.supabase.realtime.PostgresAction
-import io.github.jan.supabase.realtime.postgresChangeFlow
-import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,9 +50,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // Observador de Configuração
         repository.configFlow.onEach { config ->
             if (config != null) {
-                Log.d("VisionCentral", "[SYNC-11] Nova configuração recebida: $config")
+                Log.d("VisionCentral", "[CONFIG] Nova configuração recebida: $config")
                 if (!config.isLinked && _uiState.value !is UiState.Activation && _uiState.value !is UiState.Splash) {
-                    Log.d("VisionCentral", "[Jogador] Dispositivo desvinculado detectado. Mudando para Ativação.")
+                    Log.d("VisionCentral", "[PLAYER] Dispositivo desvinculado detectado. Mudando para Ativação.")
                     _uiState.value = UiState.Activation()
                 }
             }
@@ -65,7 +61,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // Observador de Playlist
         repository.playlistFlow.onEach { playlist ->
             if (playlist != null) {
-                Log.d("VisionCentral", "[Jogador] Nova playlist aplicada")
+                Log.d("VisionCentral", "[PLAYER] Nova playlist aplicada")
                 val items = repository.parseItems(playlist.itemsJson)
                 val currentState = _uiState.value
                 
@@ -86,10 +82,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun checkStatus() {
         viewModelScope.launch {
-            Log.d("VisionCentral", "[Jogador] Verificando status...")
+            Log.d("VisionCentral", "[PLAYER] Verificando status...")
             _uiState.value = UiState.Splash
             delay(2000)
-
             try {
                 val config = repository.getOrCreateConfig()
                 if (!config.isLinked) {
@@ -97,7 +92,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     if (repository.isConfigValid()) {
                         repository.startHeartbeat(viewModelScope)
-                        repository.startRealtimeSync(viewModelScope)
                         startSync(config.clienteId!!)
                     } else {
                         _uiState.value = UiState.Activation("Dispositivo removido ou token inválido.")
@@ -112,14 +106,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun activate(token: String) {
         viewModelScope.launch {
-            Log.d("VisionCentral", "[Jogador] Iniciando ativação...")
+            Log.d("VisionCentral", "[PLAYER] Iniciando ativação...")
             delay(1000)
             _uiState.value = UiState.Syncing("Validando token...")
             try {
                 val newConfig = repository.validateToken(token)
                 if (newConfig?.isLinked == true) {
                     repository.startHeartbeat(viewModelScope)
-                    repository.startRealtimeSync(viewModelScope)
                     startSync(newConfig.clienteId!!)
                 } else {
                     _uiState.value = UiState.Activation("Token inválido ou não encontrado.")
@@ -133,7 +126,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun startSync(clienteId: String) {
         viewModelScope.launch {
-            Log.d("VisionCentral", "[Jogador] Iniciando sincronização...")
+            Log.d("VisionCentral", "[PLAYER] Iniciando sincronização...")
             _isSyncing.value = true
             _uiState.value = UiState.Syncing("Sincronizando conteúdos...")
             try {
@@ -166,6 +159,5 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         super.onCleared()
         repository.stopHeartbeat()
-        repository.stopRealtimeSync()
     }
 }

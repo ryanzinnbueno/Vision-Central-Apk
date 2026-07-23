@@ -32,6 +32,7 @@ data class DeviceConfig(
     val clienteId: String? = null,
     val isLinked: Boolean = false,
     val lastSync: Long = 0,
+    val lastServerUpdate: String? = null,
     val tvId: String? = null,
     val tvName: String? = null,
     val orientacao: String = "Horizontal",
@@ -43,7 +44,9 @@ data class DeviceConfig(
     val saturacao: Int = 100,
     val zoom: Int = 100,
     val volume: Int = 100,
-    val tempoTransicao: Int = 500
+    val tempoTransicao: Int = 500,
+    val playlistId: String? = null,
+    val playlistUpdatedAt: String? = null
 )
 
 @Entity(tableName = "downloaded_media")

@@ -6,8 +6,7 @@ import com.aistudio.visioncentral.player.data.local.VisionDao
 import com.aistudio.visioncentral.player.data.model.Tv
 import com.aistudio.visioncentral.player.data.remote.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+
 import java.util.UUID
 
 class ConfigRepository(private val dao: VisionDao) {
@@ -55,6 +54,7 @@ class ConfigRepository(private val dao: VisionDao) {
                     tvId = matchedTv.id,
                     tvName = matchedTv.nome,
                     isLinked = true,
+                    lastServerUpdate = matchedTv.updatedAt,
                     orientacao = matchedTv.orientacao ?: "Horizontal",
                     rotacao = matchedTv.rotacao ?: 0,
                     proporcao = matchedTv.proporcao ?: "16:9",
@@ -110,6 +110,7 @@ class ConfigRepository(private val dao: VisionDao) {
             val next = current.copy(
                 tvName = tv.nome ?: current.tvName,
                 clienteId = tv.clienteId ?: current.clienteId,
+                lastServerUpdate = tv.updatedAt,
                 orientacao = tv.orientacao ?: current.orientacao,
                 rotacao = tv.rotacao ?: current.rotacao,
                 proporcao = tv.proporcao ?: current.proporcao,
