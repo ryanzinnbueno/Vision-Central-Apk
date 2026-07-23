@@ -36,72 +36,57 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
 
 class VisionRepository(context: Context) {
-    private val instanceHash = System.identityHashCode(this)
     private val db = Room.databaseBuilder(
         context.applicationContext,
         VisionDatabase::class.java, "vision_central.db"
     ).fallbackToDestructiveMigration().build()
+
     private val dao = db.dao()
     private val downloadManager = MediaDownloadManager(context, dao)
-
     private val configRepository = ConfigRepository(dao)
     private val playlistRepository = PlaylistRepository(dao, downloadManager)
     private val realtimeManager = RealtimeManager(dao)
-    private val heartbeatManager = HeartbeatManager(dao) {
-        syncTvSettings()
-    }
+    private val heartbeatManager = HeartbeatManager(dao)
     private val syncScheduler = SyncScheduler {
         syncTvSettings()
     }
+    private val isSyncRunning = AtomicBoolean(false)
 
     val downloadProgress = downloadManager.downloadProgress
     val isDownloading = downloadManager.isDownloading
     val storageError = downloadManager.storageError
+
     val configFlow = dao.getConfigFlow()
     val playlistFlow = dao.getPlaylistFlow()
 
     init {
-        Log.d("VisionCentral", "[AUDIT] VisionRepository INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
         realtimeManager.setListener(object : RealtimeManager.RealtimeListener {
             override fun onUpdateReceived(tvId: String) {
-                Log.d("VisionCentral", "[SYNC-5] Recebi evento do Realtime")
-                Log.d("VisionCentral", "[VisionRepository] Chamando ConfigRepository")
                 CoroutineScope(Dispatchers.IO).launch {
                     syncTvSettings()
                 }
             }
         })
-
-        configFlow.onEach {
-            Log.d("VisionCentral", "[SYNC-10] configFlow emitiu")
-        }.launchIn(CoroutineScope(Dispatchers.IO))
-
-        playlistFlow.onEach {
-            Log.d("VisionCentral", "[SYNC-10] playlistFlow emitiu")
-        }.launchIn(CoroutineScope(Dispatchers.IO))
     }
 
     fun startRealtimeSync(scope: CoroutineScope) {
-        Log.d("VisionCentral", "[AUDIT] VisionRepository.startRealtimeSync called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeManager.start(scope)
     }
 
     fun stopRealtimeSync() {
-        Log.d("VisionCentral", "[AUDIT] VisionRepository.stopRealtimeSync called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeManager.stop()
     }
 
     fun startHeartbeat(scope: CoroutineScope) {
-        Log.d("VisionCentral", "[AUDIT] VisionRepository.startHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.start(scope)
         syncScheduler.start(scope)
     }
 
     fun stopHeartbeat() {
-        Log.d("VisionCentral", "[AUDIT] VisionRepository.stopHeartbeat called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatManager.stop()
         syncScheduler.stop()
     }
@@ -113,15 +98,29 @@ class VisionRepository(context: Context) {
     suspend fun isConfigValid(): Boolean = configRepository.isConfigValid()
 
     suspend fun syncTvSettings(): Boolean {
-        Log.d("VisionCentral", "[Configuração] Sincronizando...")
-        val config = configRepository.syncTvSettings()
-        if (config != null && config.clienteId != null) {
-            playlistRepository.syncPlaylist(config.clienteId!!)
-            heartbeatManager.sendHeartbeat(isSync = true)
-            return true
+        if (!isSyncRunning.compareAndSet(false, true)) {
+            Log.d("VisionCentral", "[Configuração] Sincronização já em andamento. Ignorando.")
+            return false
         }
-        heartbeatManager.sendHeartbeat(isSync = false)
-        return config != null
+        
+        Log.d("VisionCentral", "[Configuração] Iniciando sincronização...")
+        try {
+            val config = configRepository.syncTvSettings()
+            if (config != null && config.clienteId != null) {
+                playlistRepository.syncPlaylist(config.clienteId!!)
+                heartbeatManager.sendHeartbeat(isSync = true)
+                Log.d("VisionCentral", "[Configuração] Sincronização concluída com sucesso.")
+                return true
+            }
+            heartbeatManager.sendHeartbeat(isSync = false)
+            Log.d("VisionCentral", "[Configuração] Sincronização parcial (sem playlist).")
+            return config != null
+        } catch (e: Exception) {
+            Log.e("VisionCentral", "[Configuração] Erro na sincronização", e)
+            return false
+        } finally {
+            isSyncRunning.set(false)
+        }
     }
 
     suspend fun syncPlaylist(clienteId: String): LocalPlaylist? {

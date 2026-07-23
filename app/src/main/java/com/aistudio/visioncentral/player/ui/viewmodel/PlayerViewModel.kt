@@ -49,7 +49,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val storageError = repository.storageError
 
     init {
-        Log.d("VisionCentral", "[AUDIT] PlayerViewModel INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
         Log.d("VisionCentral", "PlayerViewModel inicializado")
         
         // Observador de Configuração

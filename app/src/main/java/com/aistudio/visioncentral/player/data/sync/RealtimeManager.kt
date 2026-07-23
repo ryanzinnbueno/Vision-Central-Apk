@@ -5,6 +5,7 @@ import com.aistudio.visioncentral.player.data.local.VisionDao
 import com.aistudio.visioncentral.player.data.remote.SupabaseClient
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
@@ -17,12 +18,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 class RealtimeManager(private val dao: VisionDao) {
-    private val instanceHash = System.identityHashCode(this)
     private var realtimeJob: Job? = null
-
-    init {
-        Log.d("VisionCentral", "[AUDIT] RealtimeManager INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
-    }
+    private var currentChannel: RealtimeChannel? = null
 
     interface RealtimeListener {
         fun onUpdateReceived(tvId: String)
@@ -35,9 +32,24 @@ class RealtimeManager(private val dao: VisionDao) {
     }
 
     fun start(scope: CoroutineScope) {
-        Log.d("VisionCentral", "[AUDIT] RealtimeManager.start called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeJob?.cancel()
+        
         realtimeJob = scope.launch {
+            try {
+                // Clear any previous channel
+                currentChannel?.let {
+                    try {
+                        it.unsubscribe()
+                        SupabaseClient.client.realtime.removeChannel(it)
+                    } catch (e: Exception) {
+                        Log.e("VisionCentral", "[Em tempo real] Erro ao limpar canal anterior", e)
+                    }
+                }
+                currentChannel = null
+            } catch (e: Exception) {
+                // Ignore
+            }
+
             val config = dao.getConfig() ?: run {
                 Log.e("VisionCentral", "[Em tempo real] Erro: Configuração local ausente")
                 return@launch
@@ -47,14 +59,12 @@ class RealtimeManager(private val dao: VisionDao) {
                 return@launch
             }
             
-            Log.d("VisionCentral", "[SYNC-1] Realtime iniciado")
             Log.d("VisionCentral", "[Em tempo real] Iniciando monitoramento para TV: $tvId")
             
             try {
                 SupabaseClient.client.realtime.status.onEach { status ->
                     when (status) {
                         Realtime.Status.CONNECTED -> {
-                            Log.i("VisionCentral", "[SYNC-2] WebSocket conectado")
                             Log.i("VisionCentral", "[Em tempo real] WebSocket conectado")
                         }
                         Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[Em tempo real] Realtime desconectado")
@@ -64,9 +74,8 @@ class RealtimeManager(private val dao: VisionDao) {
                 }.launchIn(this)
 
                 SupabaseClient.client.realtime.connect()
-
-                val channel = SupabaseClient.client.realtime.channel("tvs_changes")
-                Log.d("VisionCentral", "[Em tempo real] Canal registrado")
+                val channel = SupabaseClient.client.realtime.channel("tvs_changes_${tvId}")
+                currentChannel = channel
                 
                 channel.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
                     table = "tvs"
@@ -74,39 +83,58 @@ class RealtimeManager(private val dao: VisionDao) {
                     val record = action.record
                     val oldRecord = action.oldRecord
                     val recordId = record["id"]?.jsonPrimitive?.contentOrNull
-                    val token = record["token"]?.jsonPrimitive?.contentOrNull
-                    
-                    Log.d("VisionCentral", "[SYNC-4] JSON COMPLETO recebido")
-                    Log.d("VisionCentral", "  - Table: tvs")
-                    Log.d("VisionCentral", "  - Schema: public")
-                    Log.d("VisionCentral", "  - Event: UPDATE")
-                    Log.d("VisionCentral", "  - Record Novo: $record")
-                    Log.d("VisionCentral", "  - Record Antigo: $oldRecord")
-                    Log.d("VisionCentral", "  - TV ID: $recordId")
-                    Log.d("VisionCentral", "  - Token: $token")
                     
                     if (recordId == tvId) {
-                        Log.i("VisionCentral", "[Em tempo real] Evento recebido para esta TV")
-                        listener?.onUpdateReceived(recordId)
-                    } else {
-                        Log.d("VisionCentral", "[Em tempo real] Evento ignorado (TV: $recordId)")
+                        val ignoredKeys = setOf("ultima_conexao", "ultima_sincronizacao", "status", "uptime")
+                        var hasRelevantChange = false
+                        
+                        for ((key, newValue) in record) {
+                            if (key in ignoredKeys) continue
+                            val oldValue = oldRecord[key]
+                            if (oldValue != newValue) {
+                                hasRelevantChange = true
+                                break
+                            }
+                        }
+                        
+                        if (hasRelevantChange) {
+                            Log.i("VisionCentral", "[Em tempo real] Alteração relevante recebida para esta TV")
+                            listener?.onUpdateReceived(recordId)
+                        } else {
+                            Log.d("VisionCentral", "[Em tempo real] Alteração apenas de heartbeat. Ignorando.")
+                        }
                     }
                 }.launchIn(this)
                 
                 channel.subscribe()
-                Log.d("VisionCentral", "[SYNC-3] Subscription ativa")
                 Log.d("VisionCentral", "[Em tempo real] Subscription ativa")
-
             } catch (e: Exception) {
-                Log.e("VisionCentral", "[Em tempo real] Erro ao iniciar Realtime", e)
+                // Ignore WebSocketCapability errors, do not crash or block
+                if (e.message?.contains("WebSocketCapability") == true) {
+                    Log.e("VisionCentral", "[Em tempo real] Engine doesn't support WebSocketCapability. Reprodução continua via HTTP.")
+                } else {
+                    Log.e("VisionCentral", "[Em tempo real] Erro ao iniciar Realtime", e)
+                }
             }
         }
     }
 
     fun stop() {
-        Log.d("VisionCentral", "[AUDIT] RealtimeManager.stop called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         realtimeJob?.cancel()
         realtimeJob = null
+        val channelToClose = currentChannel
+        currentChannel = null
+        
+        if (channelToClose != null) {
+            CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    channelToClose.unsubscribe()
+                    SupabaseClient.client.realtime.removeChannel(channelToClose)
+                } catch (e: Exception) {
+                    Log.e("VisionCentral", "[Em tempo real] Erro ao parar Realtime", e)
+                }
+            }
+        }
         Log.d("VisionCentral", "[Em tempo real] Realtime interrompido")
     }
 }

@@ -10,19 +10,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class HeartbeatManager(
-    private val dao: VisionDao,
-    private val onSyncRequested: suspend () -> Unit
-) {
-    private val instanceHash = System.identityHashCode(this)
+class HeartbeatManager(private val dao: VisionDao) {
     private var heartbeatJob: Job? = null
 
-    init {
-        Log.d("VisionCentral", "[AUDIT] HeartbeatManager INSTANCE CREATED - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name}")
-    }
-
     fun start(scope: CoroutineScope) {
-        Log.d("VisionCentral", "[AUDIT] HeartbeatManager.start called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (true) {
@@ -32,19 +23,12 @@ class HeartbeatManager(
                     Log.e("VisionCentral", "[Batimento cardíaco] Erro no loop", e)
                 }
                 
-                try {
-                    onSyncRequested()
-                } catch (e: Exception) {
-                    Log.e("VisionCentral", "[Batimento cardíaco] Erro ao sincronizar config", e)
-                }
-                
                 delay(30000)
             }
         }
     }
 
     fun stop() {
-        Log.d("VisionCentral", "[AUDIT] HeartbeatManager.stop called - Time: ${java.util.Date()} - Hash: $instanceHash - Thread: ${Thread.currentThread().name} - Caller: ${Log.getStackTraceString(Throwable())}")
         heartbeatJob?.cancel()
         heartbeatJob = null
     }
