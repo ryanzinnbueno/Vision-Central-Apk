@@ -30,6 +30,7 @@ import com.aistudio.visioncentral.player.data.repository.PlaylistRepository
 import com.aistudio.visioncentral.player.data.sync.RealtimeManager
 import com.aistudio.visioncentral.player.data.sync.HeartbeatManager
 import com.aistudio.visioncentral.player.data.sync.SyncScheduler
+import com.aistudio.visioncentral.player.data.sync.SyncType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
 
 class VisionRepository(context: Context) {
+
     private val db = Room.databaseBuilder(
         context.applicationContext,
         VisionDatabase::class.java, "vision_central.db"
@@ -47,14 +49,18 @@ class VisionRepository(context: Context) {
 
     private val dao = db.dao()
     private val downloadManager = MediaDownloadManager(context, dao)
+
     private val configRepository = ConfigRepository(dao)
     private val playlistRepository = PlaylistRepository(dao, downloadManager)
     private val realtimeManager = RealtimeManager(dao)
     private val heartbeatManager = HeartbeatManager(dao)
     private val syncScheduler = SyncScheduler {
-        syncTvSettings()
+        checkAndSyncIfNeeded()
     }
+    
     private val isSyncRunning = AtomicBoolean(false)
+    private var pendingSyncType: SyncType? = null
+    private var lastSyncTime = 0L
 
     val downloadProgress = downloadManager.downloadProgress
     val isDownloading = downloadManager.isDownloading
@@ -65,9 +71,9 @@ class VisionRepository(context: Context) {
 
     init {
         realtimeManager.setListener(object : RealtimeManager.RealtimeListener {
-            override fun onUpdateReceived(tvId: String) {
+            override fun onUpdateReceived(tvId: String, syncType: SyncType) {
                 CoroutineScope(Dispatchers.IO).launch {
-                    syncTvSettings()
+                    syncTvSettings(syncType)
                 }
             }
         })
@@ -97,30 +103,71 @@ class VisionRepository(context: Context) {
 
     suspend fun isConfigValid(): Boolean = configRepository.isConfigValid()
 
-    suspend fun syncTvSettings(): Boolean {
+    private suspend fun checkAndSyncIfNeeded() {
+        val hasPending = synchronized(this) { pendingSyncType != null }
+        if (hasPending) {
+            Log.d("VisionCentral", "[SYNC] Scheduler encontrou sincronização pendente. Executando...")
+            syncTvSettings(SyncType.FULL_SYNC)
+        } else {
+            val timeSinceLastSync = System.currentTimeMillis() - lastSyncTime
+            if (timeSinceLastSync > 280000) { // slightly less than 5 mins
+                Log.d("VisionCentral", "[SYNC] Timeout atingido. Executando sincronização de segurança...")
+                syncTvSettings(SyncType.FULL_SYNC)
+            } else {
+                Log.d("VisionCentral", "[SYNC] Sincronização recente ($timeSinceLastSync ms atrás). Ignorando polling.")
+            }
+        }
+    }
+
+    suspend fun syncTvSettings(type: SyncType = SyncType.FULL_SYNC): Boolean {
         if (!isSyncRunning.compareAndSet(false, true)) {
-            Log.d("VisionCentral", "[Configuração] Sincronização já em andamento. Ignorando.")
-            return false
+            synchronized(this) {
+                if (type == SyncType.FULL_SYNC) {
+                    pendingSyncType = SyncType.FULL_SYNC
+                } else if (pendingSyncType == null) {
+                    pendingSyncType = SyncType.CONFIG_ONLY
+                }
+            }
+            Log.d("VisionCentral", "[SYNC] Sincronização em andamento. Adicionado à fila: $type")
+            return true
         }
         
-        Log.d("VisionCentral", "[Configuração] Iniciando sincronização...")
-        try {
-            val config = configRepository.syncTvSettings()
-            if (config != null && config.clienteId != null) {
-                playlistRepository.syncPlaylist(config.clienteId!!)
-                heartbeatManager.sendHeartbeat(isSync = true)
-                Log.d("VisionCentral", "[Configuração] Sincronização concluída com sucesso.")
-                return true
+        var currentType = type
+        var success = false
+        
+        while (true) {
+            Log.d("VisionCentral", "[SYNC] Iniciando sincronização: $currentType")
+            try {
+                val config = configRepository.syncTvSettings()
+                if (config != null) {
+                    if (currentType == SyncType.FULL_SYNC && config.clienteId != null) {
+                        playlistRepository.syncPlaylist(config.clienteId!!)
+                        heartbeatManager.sendHeartbeat(isSync = true)
+                    } else {
+                        heartbeatManager.sendHeartbeat(isSync = false)
+                    }
+                    Log.d("VisionCentral", "[SYNC] Sincronização concluída com sucesso.")
+                    lastSyncTime = System.currentTimeMillis()
+                    success = true
+                } else {
+                    Log.d("VisionCentral", "[SYNC] Sincronização falhou (config nula).")
+                }
+            } catch (e: Exception) {
+                Log.e("VisionCentral", "[SYNC] Erro na sincronização", e)
+            } finally {
+                var nextType: SyncType? = null
+                synchronized(this) {
+                    nextType = pendingSyncType
+                    pendingSyncType = null
+                    if (nextType == null) {
+                        isSyncRunning.set(false)
+                    }
+                }
+                if (nextType == null) break
+                currentType = nextType!!
             }
-            heartbeatManager.sendHeartbeat(isSync = false)
-            Log.d("VisionCentral", "[Configuração] Sincronização parcial (sem playlist).")
-            return config != null
-        } catch (e: Exception) {
-            Log.e("VisionCentral", "[Configuração] Erro na sincronização", e)
-            return false
-        } finally {
-            isSyncRunning.set(false)
         }
+        return success
     }
 
     suspend fun syncPlaylist(clienteId: String): LocalPlaylist? {

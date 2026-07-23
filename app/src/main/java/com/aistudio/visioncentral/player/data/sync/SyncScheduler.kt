@@ -15,10 +15,10 @@ class SyncScheduler(private val onSyncRequested: suspend () -> Unit) {
             while (true) {
                 delay(300000) // 5 minutes
                 try {
-                    Log.d("VisionCentral", "[SyncScheduler] Iniciando polling de segurança...")
+                    Log.d("VisionCentral", "[SYNC] Iniciando polling de segurança...")
                     onSyncRequested()
                 } catch (e: Exception) {
-                    Log.e("VisionCentral", "[SyncScheduler] Erro no polling de segurança", e)
+                    Log.e("VisionCentral", "[SYNC] Erro no polling de segurança", e)
                 }
             }
         }

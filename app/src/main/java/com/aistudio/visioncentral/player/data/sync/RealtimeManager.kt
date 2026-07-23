@@ -17,12 +17,17 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
+enum class SyncType {
+    CONFIG_ONLY,
+    FULL_SYNC
+}
+
 class RealtimeManager(private val dao: VisionDao) {
     private var realtimeJob: Job? = null
     private var currentChannel: RealtimeChannel? = null
 
     interface RealtimeListener {
-        fun onUpdateReceived(tvId: String)
+        fun onUpdateReceived(tvId: String, syncType: SyncType)
     }
 
     private var listener: RealtimeListener? = null
@@ -42,7 +47,7 @@ class RealtimeManager(private val dao: VisionDao) {
                         it.unsubscribe()
                         SupabaseClient.client.realtime.removeChannel(it)
                     } catch (e: Exception) {
-                        Log.e("VisionCentral", "[Em tempo real] Erro ao limpar canal anterior", e)
+                        Log.e("VisionCentral", "[REALTIME] Erro ao limpar canal anterior", e)
                     }
                 }
                 currentChannel = null
@@ -51,24 +56,24 @@ class RealtimeManager(private val dao: VisionDao) {
             }
 
             val config = dao.getConfig() ?: run {
-                Log.e("VisionCentral", "[Em tempo real] Erro: Configuração local ausente")
+                Log.e("VisionCentral", "[REALTIME] Erro: Configuração local ausente")
                 return@launch
             }
             val tvId = config.tvId ?: run {
-                Log.e("VisionCentral", "[Em tempo real] Erro: TV ID não vinculado")
+                Log.e("VisionCentral", "[REALTIME] Erro: TV ID não vinculado")
                 return@launch
             }
             
-            Log.d("VisionCentral", "[Em tempo real] Iniciando monitoramento para TV: $tvId")
+            Log.d("VisionCentral", "[REALTIME] Iniciando monitoramento para TV: $tvId")
             
             try {
                 SupabaseClient.client.realtime.status.onEach { status ->
                     when (status) {
                         Realtime.Status.CONNECTED -> {
-                            Log.i("VisionCentral", "[Em tempo real] WebSocket conectado")
+                            Log.i("VisionCentral", "[REALTIME] WebSocket conectado")
                         }
-                        Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[Em tempo real] Realtime desconectado")
-                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "[Em tempo real] Reconectando")
+                        Realtime.Status.DISCONNECTED -> Log.w("VisionCentral", "[REALTIME] Realtime desconectado")
+                        Realtime.Status.CONNECTING -> Log.d("VisionCentral", "[REALTIME] Reconectando")
                         else -> {}
                     }
                 }.launchIn(this)
@@ -86,34 +91,42 @@ class RealtimeManager(private val dao: VisionDao) {
                     
                     if (recordId == tvId) {
                         val ignoredKeys = setOf("ultima_conexao", "ultima_sincronizacao", "status", "uptime")
-                        var hasRelevantChange = false
+                        var hasConfigChange = false
+                        var hasPlaylistChange = false
                         
                         for ((key, newValue) in record) {
                             if (key in ignoredKeys) continue
-                            val oldValue = oldRecord[key]
+                            val oldValue = oldRecord?.get(key)
                             if (oldValue != newValue) {
-                                hasRelevantChange = true
-                                break
+                                if (key == "playlist_id" || key == "cliente_id") {
+                                    hasPlaylistChange = true
+                                } else {
+                                    hasConfigChange = true
+                                }
                             }
                         }
                         
-                        if (hasRelevantChange) {
-                            Log.i("VisionCentral", "[Em tempo real] Alteração relevante recebida para esta TV")
-                            listener?.onUpdateReceived(recordId)
+                        if (hasPlaylistChange) {
+                            Log.i("VisionCentral", "[REALTIME] Alteração de playlist detectada")
+                            listener?.onUpdateReceived(recordId, SyncType.FULL_SYNC)
+                        } else if (hasConfigChange) {
+                            Log.i("VisionCentral", "[REALTIME] Alteração de configuração detectada")
+                            listener?.onUpdateReceived(recordId, SyncType.CONFIG_ONLY)
                         } else {
-                            Log.d("VisionCentral", "[Em tempo real] Alteração apenas de heartbeat. Ignorando.")
+                            Log.d("VisionCentral", "[REALTIME] Alteração apenas de heartbeat. Ignorando.")
                         }
                     }
                 }.launchIn(this)
                 
                 channel.subscribe()
-                Log.d("VisionCentral", "[Em tempo real] Subscription ativa")
+                Log.d("VisionCentral", "[REALTIME] Subscription ativa")
             } catch (e: Exception) {
                 // Ignore WebSocketCapability errors, do not crash or block
                 if (e.message?.contains("WebSocketCapability") == true) {
-                    Log.e("VisionCentral", "[Em tempo real] Engine doesn't support WebSocketCapability. Reprodução continua via HTTP.")
+                    Log.e("VisionCentral", "[REALTIME] Engine doesn't support WebSocketCapability. Reprodução continua via HTTP.")
+                    // Do not attempt to reconnect aggressively. Let the scheduler handle it.
                 } else {
-                    Log.e("VisionCentral", "[Em tempo real] Erro ao iniciar Realtime", e)
+                    Log.e("VisionCentral", "[REALTIME] Erro ao iniciar Realtime", e)
                 }
             }
         }
@@ -131,10 +144,10 @@ class RealtimeManager(private val dao: VisionDao) {
                     channelToClose.unsubscribe()
                     SupabaseClient.client.realtime.removeChannel(channelToClose)
                 } catch (e: Exception) {
-                    Log.e("VisionCentral", "[Em tempo real] Erro ao parar Realtime", e)
+                    Log.e("VisionCentral", "[REALTIME] Erro ao parar Realtime", e)
                 }
             }
         }
-        Log.d("VisionCentral", "[Em tempo real] Realtime interrompido")
+        Log.d("VisionCentral", "[REALTIME] Realtime interrompido")
     }
 }

@@ -26,11 +26,12 @@ class PlaylistRepository(
 
     suspend fun syncPlaylist(clienteId: String): LocalPlaylist? {
         try {
-            Log.d("VisionCentral", "[Lista de reprodução] Sincronizando playlist para cliente: $clienteId")
+            Log.d("VisionCentral", "[PLAYLIST] Sincronizando playlist...")
             
             // Get TV to find linked playlist
             val config = dao.getConfig() ?: return null
             val tvId = config.tvId ?: return null
+
             val tv = SupabaseClient.client.postgrest["tvs"]
                 .select { filter { eq("id", tvId) } }
                 .decodeSingleOrNull<Tv>() ?: return null
@@ -40,7 +41,7 @@ class PlaylistRepository(
                 .decodeSingleOrNull<com.aistudio.visioncentral.player.data.model.Cliente>()
 
             val playlistId = tv.playlistId ?: cliente?.playlistId ?: run {
-                Log.d("VisionCentral", "[Lista de reprodução] Nenhuma playlist vinculada")
+                Log.d("VisionCentral", "[PLAYLIST] Nenhuma playlist vinculada")
                 return null
             }
 
@@ -55,6 +56,7 @@ class PlaylistRepository(
                 }.decodeList<PlaylistMidia>()
 
             val mediaIds = relations.map { it.midiaId }.distinct()
+
             val allMedia = if (mediaIds.isNotEmpty()) {
                 SupabaseClient.client.postgrest["midias"]
                     .select { filter { isIn("id", mediaIds) } }
@@ -87,11 +89,11 @@ class PlaylistRepository(
             
             val existing = dao.getPlaylist()
             if (existing?.itemsJson != localPlaylist.itemsJson || existing?.id != localPlaylist.id) {
-                Log.d("VisionCentral", "[Lista de reprodução] Lista de reprodução alterada")
+                Log.d("VisionCentral", "[PLAYLIST] Alteração detectada. Atualizando dados locais.")
                 dao.savePlaylist(localPlaylist)
                 
                 CoroutineScope(Dispatchers.IO).launch {
-                    Log.d("VisionCentral", "[Lista de reprodução] Download iniciado")
+                    Log.d("VisionCentral", "[DOWNLOAD] Verificando mídias para download...")
                     items.forEach { item ->
                         if (item.origem.lowercase() != "url") {
                             val expectedSize = allMedia.find { it.id == item.id }?.tamanho?.toLongOrNull()
@@ -99,14 +101,15 @@ class PlaylistRepository(
                         }
                     }
                     downloadManager.cleanupUnusedMedia(items.map { it.id }.toSet())
-                    Log.d("VisionCentral", "[Lista de reprodução] Download concluído")
+                    Log.d("VisionCentral", "[DOWNLOAD] Processo de verificação de downloads concluído.")
                 }
             } else {
-                Log.d("VisionCentral", "[Lista de reprodução] Nenhuma alteração na playlist")
+                Log.d("VisionCentral", "[PLAYLIST] Nenhuma alteração na playlist.")
             }
+
             return localPlaylist
         } catch (e: Exception) {
-            Log.e("VisionCentral", "[Lista de reprodução] Erro na sincronização", e)
+            Log.e("VisionCentral", "[PLAYLIST] Erro na sincronização", e)
             return null
         }
     }

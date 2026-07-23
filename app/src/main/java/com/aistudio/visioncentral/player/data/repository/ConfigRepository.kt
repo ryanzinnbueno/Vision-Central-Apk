@@ -17,17 +17,16 @@ class ConfigRepository(private val dao: VisionDao) {
         if (existing != null) {
             return existing
         }
-
         val deviceId = UUID.randomUUID().toString()
         val config = DeviceConfig(deviceId = deviceId)
         dao.saveConfig(config)
-        Log.d("VisionCentral", "[Configuração] Nova configuração gerada: $deviceId")
+        Log.d("VisionCentral", "[CONFIG] Nova configuração gerada: $deviceId")
         return config
     }
 
     suspend fun validateToken(rawToken: String): DeviceConfig? {
         val normalized = normalizeToken(rawToken)
-        Log.d("VisionCentral", "[Configuração] Validando token: $rawToken")
+        Log.d("VisionCentral", "[CONFIG] Validando token: $rawToken")
         try {
             val matchedTv = try {
                 SupabaseClient.client.postgrest["tvs"]
@@ -48,7 +47,7 @@ class ConfigRepository(private val dao: VisionDao) {
             }
 
             if (matchedTv != null) {
-                Log.d("VisionCentral", "[Configuração] TV encontrada: ${matchedTv.nome}")
+                Log.d("VisionCentral", "[CONFIG] TV encontrada: ${matchedTv.nome}")
                 val currentConfig = dao.getConfig()!!
                 val newConfig = currentConfig.copy(
                     token = matchedTv.token,
@@ -71,7 +70,7 @@ class ConfigRepository(private val dao: VisionDao) {
                 return newConfig
             }
         } catch (e: Exception) {
-            Log.e("VisionCentral", "[Configuração] Erro ao validar token", e)
+            Log.e("VisionCentral", "[CONFIG] Erro ao validar token", e)
         }
         return null
     }
@@ -87,7 +86,7 @@ class ConfigRepository(private val dao: VisionDao) {
                 }.decodeSingleOrNull<Tv>()
             
             if (tv == null) {
-                Log.d("VisionCentral", "[Configuração] TV removida do Supabase. Desvinculando...")
+                Log.d("VisionCentral", "[CONFIG] TV removida do Supabase. Desvinculando...")
                 dao.saveConfig(config.copy(isLinked = false, clienteId = null, tvId = null))
                 return false
             }
@@ -101,49 +100,13 @@ class ConfigRepository(private val dao: VisionDao) {
         try {
             val config = dao.getConfig() ?: return null
             val tvId = config.tvId ?: return null
-
-            Log.d("VisionCentral", "[SYNC-6] Consultando Supabase")
-            Log.d("VisionCentral", "  - TV ID: $tvId")
-            Log.d("VisionCentral", "  - TOKEN: ${config.token}")
-
+            
             val tv = SupabaseClient.client.postgrest["tvs"]
                 .select { filter { eq("id", tvId) } }
                 .decodeSingleOrNull<Tv>() ?: return null
-
-            Log.d("VisionCentral", "[SYNC-7] JSON COMPLETO recebido")
-            try {
-                val fullJson = Json { prettyPrint = true }.encodeToString(tv)
-                Log.d("VisionCentral", fullJson)
-            } catch (e: Exception) {
-                Log.d("VisionCentral", tv.toString())
-            }
-
+                
             val current = dao.getConfig()!!
             
-            Log.d("VisionCentral", "[Comparação de Campos]")
-            val fields = listOf(
-                Triple("nome", current.tvName, tv.nome),
-                Triple("orientacao", current.orientacao, tv.orientacao),
-                Triple("rotacao", current.rotacao, tv.rotacao),
-                Triple("proporcao", current.proporcao, tv.proporcao),
-                Triple("modo_exibicao", current.modoExibicao, tv.modoExibicao),
-                Triple("brilho", current.brilho, tv.brilho),
-                Triple("contraste", current.contraste, tv.contraste),
-                Triple("saturacao", current.saturacao, tv.saturacao),
-                Triple("zoom", current.zoom, tv.zoom),
-                Triple("volume", current.volume, tv.volume),
-                Triple("tempo_transicao", current.tempoTransicao, tv.tempoTransicao),
-                Triple("playlist", current.clienteId, tv.clienteId)
-            )
-
-            fields.forEach { (name, old, new) ->
-                val changed = old != new
-                Log.d("VisionCentral", "  - Campo: $name")
-                Log.d("VisionCentral", "    Valor antigo: $old")
-                Log.d("VisionCentral", "    Valor novo: $new")
-                Log.d("VisionCentral", "    Mudou? ${if (changed) "SIM" else "NÃO"}")
-            }
-
             val next = current.copy(
                 tvName = tv.nome ?: current.tvName,
                 clienteId = tv.clienteId ?: current.clienteId,
@@ -160,17 +123,16 @@ class ConfigRepository(private val dao: VisionDao) {
             )
 
             if (next != current) {
-                Log.d("VisionCentral", "[SYNC-8] Salvando Room")
                 dao.saveConfig(next)
-                Log.d("VisionCentral", "[SYNC-9] Room atualizado")
-                Log.d("VisionCentral", "[Configuração] Configuração aplicada")
+                Log.d("VisionCentral", "[CONFIG] Configuração atualizada no banco local.")
                 return next
             } else {
-                Log.d("VisionCentral", "[Configuração] Nenhuma alteração detectada")
+                Log.d("VisionCentral", "[CONFIG] Nenhuma alteração detectada nas configurações locais.")
             }
+
             return current
         } catch (e: Exception) {
-            Log.e("VisionCentral", "[Configuração] Erro na sincronização", e)
+            Log.e("VisionCentral", "[CONFIG] Erro na sincronização da TV", e)
             return null
         }
     }
@@ -188,14 +150,5 @@ class ConfigRepository(private val dao: VisionDao) {
 
     private fun normalizeToken(raw: String): String {
         return raw.trim().uppercase().replace(Regex("[^A-Z0-9]"), "")
-    }
-
-    private fun compareAndLog(field: String, old: Any?, new: Any?) {
-        if (old != new) {
-            Log.d("VisionCentral", "Campo: $field")
-            Log.d("VisionCentral", "Valor antigo: $old")
-            Log.d("VisionCentral", "Valor novo: $new")
-            Log.d("VisionCentral", "↓")
-        }
     }
 }

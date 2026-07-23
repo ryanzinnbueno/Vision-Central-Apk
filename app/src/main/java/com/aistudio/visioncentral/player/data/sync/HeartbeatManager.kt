@@ -20,7 +20,7 @@ class HeartbeatManager(private val dao: VisionDao) {
                 try {
                     sendHeartbeat(false)
                 } catch (e: Exception) {
-                    Log.e("VisionCentral", "[Batimento cardíaco] Erro no loop", e)
+                    Log.e("VisionCentral", "[HEARTBEAT] Erro no loop", e)
                 }
                 
                 delay(30000)
@@ -54,13 +54,13 @@ class HeartbeatManager(private val dao: VisionDao) {
                 ultimaSincronizacao = if (isSync) timestamp else null
             )
             
-            Log.d("VisionCentral", "[Batimento cardíaco] Enviando heartbeat")
+            Log.d("VisionCentral", "[HEARTBEAT] Enviando heartbeat")
             SupabaseClient.client.postgrest["tvs"].update(update) {
                 filter { eq("id", tvId) }
             }
-            Log.d("VisionCentral", "[Batimento cardíaco] Batimento cardíaco enviado")
+            Log.d("VisionCentral", "[HEARTBEAT] Batimento cardíaco enviado")
         } catch (e: Exception) {
-            Log.e("VisionCentral", "[Batimento cardíaco] Heartbeat falhou", e)
+            Log.e("VisionCentral", "[HEARTBEAT] Heartbeat falhou", e)
         }
     }
 }
